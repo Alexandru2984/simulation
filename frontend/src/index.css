@@ -1,2 +1,4 @@
 *, *::before, *::after { box-sizing: border-box; }
-body { margin: 0; padding: 0; background: #0f172a; }
+html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+body { background: #030711; font-family: system-ui, -apple-system, sans-serif; }
+button { font-family: inherit; }

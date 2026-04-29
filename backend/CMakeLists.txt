@@ -10,6 +10,7 @@ add_executable(weather_backend
     src/main.cc
     src/WeatherSim.cc
     src/WeatherController.cc
+    src/SeedController.cc
 )
 
 target_link_libraries(weather_backend PRIVATE Drogon::Drogon)

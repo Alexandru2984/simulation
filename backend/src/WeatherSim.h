@@ -23,6 +23,12 @@ public:
 
     WeatherState current() const;
 
+    // Seed the simulation from real weather data (e.g. OpenWeather)
+    void seed(double temp, double pressure, double wind_speed, double wind_dir);
+
+    // Simulation speed multiplier (1x = real-time, 10x = 10s per tick)
+    void setSpeed(double multiplier);
+
 private:
     WeatherSim();
     ~WeatherSim();
@@ -45,6 +51,12 @@ private:
 
     // Simulation time counter (seconds)
     long long tick_{0};
+
+    // Speed multiplier
+    std::atomic<double> speed_{1.0};
+
+    // Seed base (updated when seed() is called)
+    double seedTemp_{T_BASE};
 
     static constexpr double T_BASE    = 20.0;
     static constexpr double T_AMP     = 10.0;

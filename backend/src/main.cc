@@ -1,6 +1,7 @@
 #include <drogon/drogon.h>
 #include "WeatherSim.h"
 #include "WeatherController.h"
+#include "SeedController.h"
 
 // Forward declaration from WeatherController.cc
 void broadcastWeather();
