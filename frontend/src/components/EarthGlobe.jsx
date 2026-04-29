@@ -63,8 +63,11 @@ export default function EarthGlobe({ temperature = 20, onGlobeClick }) {
   const handleClick = (e) => {
     e.stopPropagation()
     const p = e.point.clone().normalize()
+    // Inverse of Three.js SphereGeometry mapping: lon=0→+X, lon=90E→-Z
+    // x = -cos(lat)*cos((lon+180)°), z = cos(lat)*sin((lon+180)°)
+    // → lonRad = atan2(z, -x), lon = lonRad*180/π - 180
     const lat = Math.asin(p.y) * (180 / Math.PI)
-    const lon = Math.atan2(p.x, p.z) * (180 / Math.PI)
+    const lon = Math.atan2(p.z, -p.x) * (180 / Math.PI) - 180
     onGlobeClick?.(lat, lon)
   }
 
