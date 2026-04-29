@@ -18,7 +18,7 @@ GridSim& GridSim::instance() {
     return inst;
 }
 
-GridSim::GridSim() { initGrid(); }
+GridSim::GridSim() { initGrid(); nudge_.fill(Nudge{}); }
 GridSim::~GridSim() { stop(); }
 
 void GridSim::initGrid() {
@@ -161,10 +161,63 @@ void GridSim::step(float dt) {
     {
         std::lock_guard<std::mutex> lk(mutex_);
         grid_ = next;
+        drainNudges();
     }
 
     simTime_ += dt * speed_.load();
     tick_++;
+}
+
+// ── Data assimilation ─────────────────────────────────────────────────────────
+// Adds an observation to the nudge buffer using a 2-cell Gaussian stencil.
+// The nudge is drained gradually in drainNudges() so no shocks occur.
+void GridSim::assimilate(float lat, float lon,
+                          float T, float P, float U, float V, float H) {
+    // Find nearest grid row/col
+    int r0 = std::clamp((int)std::round((lat  - (-85.0f)) / 10.0f), 0, ROWS - 1);
+    int c0 = ((int)std::round((lon - (-175.0f)) / 10.0f) + COLS) % COLS;
+
+    std::lock_guard<std::mutex> lk(mutex_);
+    // Apply Gaussian weights over a 5×5 stencil (sigma ≈ 1.5 cells)
+    for (int dr = -2; dr <= 2; dr++) {
+        for (int dc = -2; dc <= 2; dc++) {
+            int r = clampR(r0 + dr);
+            int c = wrapC(c0 + dc);
+            float sigma2 = 2.25f;  // σ²
+            float w = std::exp(-(dr*dr + dc*dc) / (2.0f * sigma2));
+            Nudge& n = nudge_[idx(r, c)];
+            n.T += (T - grid_[idx(r,c)].T) * w;
+            n.P += (P - grid_[idx(r,c)].P) * w;
+            n.U += (U - grid_[idx(r,c)].U) * w;
+            n.V += (V - grid_[idx(r,c)].V) * w;
+            n.H += (H - grid_[idx(r,c)].H) * w;
+            n.weight += w;
+        }
+    }
+}
+
+// Called from step(): drain nudges at RELAX_RATE per physics step
+void GridSim::drainNudges() {
+    constexpr float RELAX_RATE = 0.015f;   // ~2% correction per step → ~1.5s to fully apply
+    constexpr float MAX_DELTA_T = 0.5f;    // cap per step to prevent spikes
+    for (int i = 0; i < SIZE; i++) {
+        Nudge& n = nudge_[i];
+        if (n.weight < 1e-6f) continue;
+        Cell& cell = grid_[i];
+        float dT = std::clamp(n.T * RELAX_RATE, -MAX_DELTA_T, MAX_DELTA_T);
+        cell.T = std::clamp(cell.T + dT, -80.0f, 60.0f);
+        cell.P = std::clamp(cell.P + n.P * RELAX_RATE * 0.5f, 940.0f, 1060.0f);
+        cell.U += n.U * RELAX_RATE;
+        cell.V += n.V * RELAX_RATE;
+        cell.H = std::clamp(cell.H + n.H * RELAX_RATE, 0.0f, 1.0f);
+        // Decay nudge buffer so it naturally fades out after ~1 real second
+        n.T *= (1.0f - RELAX_RATE);
+        n.P *= (1.0f - RELAX_RATE);
+        n.U *= (1.0f - RELAX_RATE);
+        n.V *= (1.0f - RELAX_RATE);
+        n.H *= (1.0f - RELAX_RATE);
+        n.weight *= (1.0f - RELAX_RATE);
+    }
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────

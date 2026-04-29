@@ -13,6 +13,7 @@ add_executable(weather_backend
     src/SeedController.cc
     src/GridSim.cc
     src/GridController.cc
+    src/WeatherProxy.cc
 )
 
 # ── Unit tests ────────────────────────────────────────────────────────────────

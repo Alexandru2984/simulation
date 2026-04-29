@@ -4,11 +4,12 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 class GridSim {
 public:
-    static constexpr int ROWS = 18;   // latitudes: -85° to +85° step 10°
-    static constexpr int COLS = 36;   // longitudes: -175° to +175° step 10°
+    static constexpr int ROWS = 18;
+    static constexpr int COLS = 36;
     static constexpr int SIZE = ROWS * COLS;
 
     struct Cell {
@@ -20,6 +21,12 @@ public:
         float R = 0;   // precipitation mm/h
     };
 
+    // Pending nudge accumulated from data assimilation
+    struct Nudge {
+        float T = 0, P = 0, U = 0, V = 0, H = 0;
+        float weight = 0;  // total Gaussian weight applied
+    };
+
     static GridSim& instance();
 
     void start();
@@ -27,14 +34,16 @@ public:
     void setSpeed(float s);
     float speed() const { return speed_.load(); }
 
-    // Thread-safe JSON snapshot of the full grid
     std::string getStateJson() const;
-
-    // Thread-safe copy of grid (for tests)
     std::array<Cell, SIZE> getGrid() const;
     long long tick() const { return tick_.load(); }
 
-    // Grid geometry helpers (public for tests)
+    // Data assimilation: nudge the grid toward an observation at (lat, lon).
+    // Uses a Gaussian stencil (radius 2 cells) so no sharp discontinuities.
+    // Thread-safe — can be called from any thread.
+    void assimilate(float lat, float lon,
+                    float T, float P, float U, float V, float H);
+
     float cellLat(int r) const { return -85.0f + r * 10.0f; }
     float cellLon(int c) const { return -175.0f + c * 10.0f; }
     int   idx(int r, int c)    const { return r * COLS + c; }
@@ -48,14 +57,17 @@ private:
     void loop();
     void step(float dt);
     void initGrid();
+    void drainNudges();   // apply pending nudges smoothly into the grid
 
-    std::array<Cell, SIZE> grid_;
-    mutable std::mutex     mutex_;
+    std::array<Cell, SIZE>  grid_;
+    std::array<Nudge, SIZE> nudge_;  // accumulated observations waiting to be drained
+    mutable std::mutex      mutex_;
 
     std::thread            thread_;
     std::atomic<bool>      running_{false};
     std::atomic<float>     speed_{1.0f};
     std::atomic<long long> tick_{0};
 
-    float simTime_{0.0f};  // accumulated simulation time in seconds
+    float simTime_{0.0f};
 };
+

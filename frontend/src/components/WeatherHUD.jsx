@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import SearchBar from './SearchBar'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW']
@@ -84,7 +85,7 @@ function StatPill({ icon, value, unit, label, color }) {
 }
 
 // ── main component ───────────────────────────────────────────────────────────
-export default function WeatherHUD({ weatherData: wd, status, onSeed, onSpeedChange, locations, overlayMode, onOverlayMode }) {
+export default function WeatherHUD({ weatherData: wd, status, onSeed, onSpeedChange, onSearchSelect, locations, overlayMode, onOverlayMode }) {
   const isMobile = useIsMobile()
   const [speed, setSpeed]     = useState(1)
   const [seeding, setSeeding] = useState(false)
@@ -124,6 +125,14 @@ export default function WeatherHUD({ weatherData: wd, status, onSeed, onSpeedCha
           border: `1px solid ${statusColor}`, color: statusColor,
           background: '#0f172acc',
         }}>● {status}</span>
+      </div>
+
+      {/* Search bar (mobile) */}
+      <div style={{
+        position: 'absolute', top: 54, left: 0, right: 0, zIndex: 20,
+        padding: '0 12px',
+      }}>
+        <SearchBar onSelect={(lat, lon, name) => { onSearchSelect(lat, lon, name); setActiveCity(name) }} isMobile />
       </div>
 
       {/* Right side stats */}
@@ -223,6 +232,14 @@ export default function WeatherHUD({ weatherData: wd, status, onSeed, onSpeedCha
             color: '#60a5fa', fontSize: '0.7rem', background: '#0f172acc',
           }}>🌧 Rain</span>
         )}
+      </div>
+
+      {/* Top-center: search */}
+      <div style={{
+        position: 'absolute', top: 20, left: '50%', transform: 'translateX(-50%)',
+        zIndex: 20, width: 280,
+      }}>
+        <SearchBar onSelect={(lat, lon, name) => { onSearchSelect(lat, lon, name); setActiveCity(name) }} isMobile={false} />
       </div>
 
       {/* Top-right: gauges */}

@@ -1,6 +1,6 @@
 import { Suspense, useRef, useEffect } from 'react'
-import { Canvas } from '@react-three/fiber'
-import { CameraControls, Stars } from '@react-three/drei'
+import { Canvas, useThree, useFrame } from '@react-three/fiber'
+import { OrbitControls, Stars } from '@react-three/drei'
 import * as THREE from 'three'
 import EarthGlobe from './EarthGlobe'
 import CloudLayer from './CloudLayer'
@@ -10,9 +10,8 @@ import RainParticles from './RainParticles'
 import GridOverlay from './GridOverlay'
 import WindField from './WindField'
 
-// lat/lon → 3D camera position for Three.js SphereGeometry
-// Three.js maps lon=0° → +X, lon=90°E → -Z, matching standard equirectangular textures.
-// Formula derived from SphereGeometry UV→vertex math: u=(lon+180)/360, v=(lat+90)/180
+// lat/lon → 3D camera position matching Three.js SphereGeometry UV mapping
+// (lon=0° → +X axis, lon=90°E → -Z axis)
 function latLonToVec3(lat, lon, r = 4.5) {
   const latRad = (lat * Math.PI) / 180
   const lonRad = ((lon + 180) * Math.PI) / 180
@@ -24,26 +23,30 @@ function latLonToVec3(lat, lon, r = 4.5) {
 }
 
 function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode }) {
-  const controlsRef = useRef()
+  const controlsRef  = useRef()
+  const flyTargetRef = useRef(null)
+  const { camera }   = useThree()
 
-  // Fly camera to location whenever flyToLocation changes
   useEffect(() => {
-    if (!flyToLocation || !controlsRef.current) return
-    const { lat, lon } = flyToLocation
-    const target = latLonToVec3(lat, lon, 4.2)
-    controlsRef.current.setLookAt(
-      target.x, target.y, target.z,
-      0, 0, 0,
-      true // smooth animation
-    )
+    if (!flyToLocation) return
+    flyTargetRef.current = latLonToVec3(flyToLocation.lat, flyToLocation.lon, 4.5)
   }, [flyToLocation])
 
-  const wd      = weatherData
-  const temp    = wd?.temperature    ?? 20
-  const pressure= wd?.pressure       ?? 1013
-  const wSpeed  = wd?.wind_speed     ?? 3
-  const wDir    = wd?.wind_direction ?? 90
-  const isRain  = pressure < 1010
+  useFrame(() => {
+    if (!flyTargetRef.current || !controlsRef.current) return
+    camera.position.lerp(flyTargetRef.current, 0.05)
+    controlsRef.current.update()
+    if (camera.position.distanceTo(flyTargetRef.current) < 0.08) {
+      flyTargetRef.current = null
+    }
+  })
+
+  const wd       = weatherData
+  const temp     = wd?.temperature    ?? 20
+  const pressure = wd?.pressure       ?? 1013
+  const wSpeed   = wd?.wind_speed     ?? 3
+  const wDir     = wd?.wind_direction ?? 90
+  const isRain   = pressure < 1010
 
   return (
     <>
@@ -60,7 +63,6 @@ function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode
       <RainParticles pressure={pressure} active={isRain} />
       <Atmosphere temperature={temp} />
 
-      {/* Grid simulation overlay — hidden when mode is 'wind' (WindField shown instead) */}
       {overlayMode && overlayMode !== 'wind' && overlayMode !== 'none' && (
         <GridOverlay gridData={gridData} mode={overlayMode} />
       )}
@@ -68,14 +70,15 @@ function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode
         <WindField gridData={gridData} />
       )}
 
-      <CameraControls
+      <OrbitControls
         ref={controlsRef}
+        enableDamping
+        dampingFactor={0.06}
+        rotateSpeed={0.45}
+        zoomSpeed={0.8}
         minDistance={2.5}
         maxDistance={9}
-        polarRotateSpeed={0.5}
-        azimuthRotateSpeed={0.5}
-        smoothTime={0.25}
-        draggingSmoothTime={0.1}
+        enablePan={false}
       />
     </>
   )

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import WeatherGlobe from './components/WeatherGlobe'
 import WeatherHUD from './components/WeatherHUD'
+import WeatherPopup from './components/WeatherPopup'
 import { useWeatherSocket } from './hooks/useWeatherSocket'
 import { useGridSocket } from './hooks/useGridSocket'
 
@@ -12,11 +13,12 @@ const CITY_FLAGS = {
 }
 
 export default function App() {
-  const { data, status }           = useWeatherSocket()
-  const { data: gridData }         = useGridSocket()
-  const [locations, setLocations]  = useState([])
+  const { data, status }            = useWeatherSocket()
+  const { data: gridData }          = useGridSocket()
+  const [locations, setLocations]   = useState([])
   const [flyToLocation, setFlyToLocation] = useState(null)
   const [overlayMode, setOverlayMode]     = useState('temp')
+  const [popup, setPopup]                 = useState(null)  // { lat, lon }
 
   useEffect(() => {
     fetch('/api/weather/locations')
@@ -34,8 +36,16 @@ export default function App() {
     } catch (_) {}
   }, [])
 
+  // Globe click: fly-to + show popup with real OWM data
   const handleGlobeClick = useCallback((lat, lon) => {
-    handleSeed(lat, lon, null)
+    setFlyToLocation({ lat, lon })
+    setPopup({ lat, lon })
+  }, [])
+
+  // Search result select: fly-to + seed + popup
+  const handleSearchSelect = useCallback((lat, lon, name) => {
+    handleSeed(lat, lon, name)
+    setPopup({ lat, lon })
   }, [handleSeed])
 
   const handleSpeedChange = useCallback((value) => {
@@ -56,10 +66,19 @@ export default function App() {
         status={status}
         onSeed={handleSeed}
         onSpeedChange={handleSpeedChange}
+        onSearchSelect={handleSearchSelect}
         locations={locations}
         overlayMode={overlayMode}
         onOverlayMode={setOverlayMode}
       />
+      {popup && (
+        <WeatherPopup
+          lat={popup.lat}
+          lon={popup.lon}
+          onClose={() => setPopup(null)}
+        />
+      )}
     </div>
   )
 }
+
