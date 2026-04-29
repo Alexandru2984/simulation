@@ -2,13 +2,14 @@
 #include "WeatherSim.h"
 #include "WeatherController.h"
 #include "SeedController.h"
+#include "GridSim.h"
+#include "GridController.h"
 
-// Forward declaration from WeatherController.cc
 void broadcastWeather();
 
 int main() {
-    // Start the weather simulation thread
     WeatherSim::instance().start();
+    GridSim::instance().start();
 
     auto& app = drogon::app();
 
@@ -18,14 +19,20 @@ int main() {
        .setThreadNum(4)
        .setClientMaxBodySize(1024 * 1024);
 
-    // Broadcast weather state to all WebSocket clients every second
+    // Broadcast single-point weather every second
     app.getLoop()->runEvery(1.0, []() {
         broadcastWeather();
+    });
+
+    // Broadcast full grid every second
+    app.getLoop()->runEvery(1.0, []() {
+        GridWsController::broadcastGrid();
     });
 
     LOG_INFO << "Weather Simulation Backend starting on 127.0.0.1:8094";
     app.run();
 
     WeatherSim::instance().stop();
+    GridSim::instance().stop();
     return 0;
 }

@@ -84,7 +84,7 @@ function StatPill({ icon, value, unit, label, color }) {
 }
 
 // ── main component ───────────────────────────────────────────────────────────
-export default function WeatherHUD({ weatherData: wd, status, onSeed, onSpeedChange, locations }) {
+export default function WeatherHUD({ weatherData: wd, status, onSeed, onSpeedChange, locations, overlayMode, onOverlayMode }) {
   const isMobile = useIsMobile()
   const [speed, setSpeed]     = useState(1)
   const [seeding, setSeeding] = useState(false)
@@ -175,7 +175,7 @@ export default function WeatherHUD({ weatherData: wd, status, onSeed, onSpeedCha
         </div>
 
         {/* Speed row */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '0 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '0 12px 4px' }}>
           <span style={{ color: '#475569', fontSize: '0.7rem' }}>⏩</span>
           {[1, 2, 5, 10, 20].map(v => (
             <button key={v} onClick={() => handleSpeed(v)} style={{
@@ -188,6 +188,10 @@ export default function WeatherHUD({ weatherData: wd, status, onSeed, onSpeedCha
           ))}
           {seeding && <span style={{ color: '#38bdf8', fontSize: '0.7rem' }}>⟳ Seeding…</span>}
           {activeCity && !seeding && <span style={{ color: '#475569', fontSize: '0.7rem' }}>📍 {activeCity}</span>}
+        </div>
+        {/* Overlay mode row */}
+        <div style={{ padding: '0 12px 6px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+          <ModeBar overlayMode={overlayMode} onOverlayMode={onOverlayMode} isMobile />
         </div>
       </div>
     </>
@@ -292,12 +296,51 @@ export default function WeatherHUD({ weatherData: wd, status, onSeed, onSpeedCha
             {seeding ? '⟳ Seeding…' : activeCity ? `📍 ${activeCity}` : '🌐 Click globe or city'}
           </span>
         </div>
+        {/* Overlay mode bar */}
+        <div style={{
+          background: '#0f172aee', border: '1px solid #1e293b', borderRadius: 12,
+          padding: '8px 16px', backdropFilter: 'blur(10px)',
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <span style={{ color: '#475569', fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap' }}>OVERLAY</span>
+          <ModeBar overlayMode={overlayMode} onOverlayMode={onOverlayMode} isMobile={false} />
+        </div>
       </div>
     </>
   )
 }
 
-// Small wind compass for desktop gauge panel
+const OVERLAY_MODES = [
+  { id: 'none',     label: '🌍 Globe',    color: '#64748b' },
+  { id: 'temp',     label: '🌡️ Temp',    color: '#f97316' },
+  { id: 'pressure', label: '🔵 Pressure', color: '#60a5fa' },
+  { id: 'humidity', label: '💧 Humidity', color: '#34d399' },
+  { id: 'precip',   label: '🌧 Precip',   color: '#818cf8' },
+  { id: 'wind',     label: '💨 Wind',     color: '#38bdf8' },
+]
+
+function ModeBar({ overlayMode, onOverlayMode, isMobile }) {
+  return (
+    <div style={{
+      display: 'flex', gap: isMobile ? 4 : 6,
+      flexWrap: isMobile ? 'nowrap' : 'wrap',
+      overflowX: isMobile ? 'auto' : 'visible',
+      scrollbarWidth: 'none',
+    }}>
+      {OVERLAY_MODES.map(m => (
+        <button key={m.id} onClick={() => onOverlayMode(m.id)} style={{
+          whiteSpace: 'nowrap',
+          background: overlayMode === m.id ? m.color + '33' : 'transparent',
+          color: overlayMode === m.id ? m.color : '#475569',
+          border: `1px solid ${overlayMode === m.id ? m.color : '#1e293b'}`,
+          borderRadius: 6, padding: isMobile ? '4px 9px' : '3px 11px',
+          fontSize: isMobile ? '0.72rem' : '0.74rem', cursor: 'pointer',
+          transition: 'all 0.15s',
+        }}>{m.label}</button>
+      ))}
+    </div>
+  )
+}
 function WindCompassSVG({ dir }) {
   const rad = ((dir - 90) * Math.PI) / 180
   const cx = 42, cy = 34, r = 22

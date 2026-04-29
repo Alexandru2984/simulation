@@ -7,6 +7,8 @@ import CloudLayer from './CloudLayer'
 import WindParticles from './WindParticles'
 import Atmosphere from './Atmosphere'
 import RainParticles from './RainParticles'
+import GridOverlay from './GridOverlay'
+import WindField from './WindField'
 
 // lat/lon → 3D camera position for Three.js SphereGeometry
 // Three.js maps lon=0° → +X, lon=90°E → -Z, matching standard equirectangular textures.
@@ -21,7 +23,7 @@ function latLonToVec3(lat, lon, r = 4.5) {
   )
 }
 
-function Scene({ weatherData, onGlobeClick, flyToLocation }) {
+function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode }) {
   const controlsRef = useRef()
 
   // Fly camera to location whenever flyToLocation changes
@@ -58,6 +60,14 @@ function Scene({ weatherData, onGlobeClick, flyToLocation }) {
       <RainParticles pressure={pressure} active={isRain} />
       <Atmosphere temperature={temp} />
 
+      {/* Grid simulation overlay — hidden when mode is 'wind' (WindField shown instead) */}
+      {overlayMode && overlayMode !== 'wind' && overlayMode !== 'none' && (
+        <GridOverlay gridData={gridData} mode={overlayMode} />
+      )}
+      {overlayMode === 'wind' && (
+        <WindField gridData={gridData} />
+      )}
+
       <CameraControls
         ref={controlsRef}
         minDistance={2.5}
@@ -71,7 +81,7 @@ function Scene({ weatherData, onGlobeClick, flyToLocation }) {
   )
 }
 
-export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation }) {
+export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode }) {
   return (
     <Canvas
       camera={{ position: [0, 1.5, 4.5], fov: 50 }}
@@ -82,6 +92,8 @@ export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation 
         weatherData={weatherData}
         onGlobeClick={onGlobeClick}
         flyToLocation={flyToLocation}
+        gridData={gridData}
+        overlayMode={overlayMode}
       />
     </Canvas>
   )

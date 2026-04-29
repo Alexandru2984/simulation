@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import WeatherGlobe from './components/WeatherGlobe'
 import WeatherHUD from './components/WeatherHUD'
 import { useWeatherSocket } from './hooks/useWeatherSocket'
+import { useGridSocket } from './hooks/useGridSocket'
 
 const CITY_FLAGS = {
   'Bucharest':    '🇷🇴', 'London':       '🇬🇧', 'Tokyo':        '🇯🇵',
@@ -11,9 +12,11 @@ const CITY_FLAGS = {
 }
 
 export default function App() {
-  const { data, status } = useWeatherSocket()
-  const [locations, setLocations]         = useState([])
+  const { data, status }           = useWeatherSocket()
+  const { data: gridData }         = useGridSocket()
+  const [locations, setLocations]  = useState([])
   const [flyToLocation, setFlyToLocation] = useState(null)
+  const [overlayMode, setOverlayMode]     = useState('temp')
 
   useEffect(() => {
     fetch('/api/weather/locations')
@@ -24,7 +27,6 @@ export default function App() {
       .catch(() => {})
   }, [])
 
-  // Seed the simulation AND fly the camera to that location
   const handleSeed = useCallback(async (lat, lon, name) => {
     setFlyToLocation({ lat, lon })
     try {
@@ -46,6 +48,8 @@ export default function App() {
         weatherData={data}
         onGlobeClick={handleGlobeClick}
         flyToLocation={flyToLocation}
+        gridData={gridData}
+        overlayMode={overlayMode}
       />
       <WeatherHUD
         weatherData={data}
@@ -53,6 +57,8 @@ export default function App() {
         onSeed={handleSeed}
         onSpeedChange={handleSpeedChange}
         locations={locations}
+        overlayMode={overlayMode}
+        onOverlayMode={setOverlayMode}
       />
     </div>
   )

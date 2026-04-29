@@ -11,7 +11,17 @@ add_executable(weather_backend
     src/WeatherSim.cc
     src/WeatherController.cc
     src/SeedController.cc
+    src/GridSim.cc
+    src/GridController.cc
 )
+
+# ── Unit tests ────────────────────────────────────────────────────────────────
+add_executable(test_gridsim
+    src/GridSim.cc
+    tests/test_gridsim.cc
+)
+target_link_libraries(test_gridsim PRIVATE Drogon::Drogon)
+target_include_directories(test_gridsim PRIVATE src)
 
 target_link_libraries(weather_backend PRIVATE Drogon::Drogon)
 target_include_directories(weather_backend PRIVATE src)
