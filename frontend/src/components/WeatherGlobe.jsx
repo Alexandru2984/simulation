@@ -22,7 +22,7 @@ function latLonToVec3(lat, lon, r = 4.5) {
   )
 }
 
-function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode }) {
+function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode, previewData }) {
   const controlsRef  = useRef()
   const flyTargetRef = useRef(null)
   const { camera }   = useThree()
@@ -40,6 +40,17 @@ function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode
       flyTargetRef.current = null
     }
   })
+
+  // When previewing a forecast/history snapshot, use that data for the overlay.
+  // Fall back to 'temp' mode if the snapshot lacks the array needed for current mode.
+  const displayData = previewData ?? gridData
+  const effectiveMode = (() => {
+    if (!previewData) return overlayMode
+    if (overlayMode === 'storm'    && !previewData.SP) return 'temp'
+    if (overlayMode === 'humidity' && !previewData.H)  return 'temp'
+    if (overlayMode === 'precip'   && !previewData.R)  return 'temp'
+    return overlayMode
+  })()
 
   const wd       = weatherData
   const temp     = wd?.temperature    ?? 20
@@ -63,11 +74,11 @@ function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode
       <RainParticles gridData={gridData} />
       <Atmosphere temperature={temp} />
 
-      {overlayMode && overlayMode !== 'wind' && overlayMode !== 'none' && (
-        <GridOverlay gridData={gridData} mode={overlayMode} />
+      {effectiveMode && effectiveMode !== 'wind' && effectiveMode !== 'none' && (
+        <GridOverlay gridData={displayData} mode={effectiveMode} />
       )}
       {overlayMode === 'wind' && (
-        <WindField gridData={gridData} />
+        <WindField gridData={displayData} />
       )}
 
       {/* Storm labels on globe */}
@@ -94,7 +105,7 @@ function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode
   )
 }
 
-export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode }) {
+export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode, previewData }) {
   return (
     <Canvas
       camera={{ position: [0, 1.5, 4.5], fov: 50 }}
@@ -107,6 +118,7 @@ export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation,
         flyToLocation={flyToLocation}
         gridData={gridData}
         overlayMode={overlayMode}
+        previewData={previewData}
       />
     </Canvas>
   )

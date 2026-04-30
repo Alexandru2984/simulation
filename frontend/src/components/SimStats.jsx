@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useFPS } from '../hooks/useFPS'
 
 function sparkline(history, color, w = 60, h = 24) {
   if (!history || history.length < 2) return null
@@ -19,6 +20,8 @@ function sparkline(history, color, w = 60, h = 24) {
 export default function SimStats({ gridData, isMobile }) {
   const [history, setHistory] = useState({ T: [], wind: [], storms: [] })
   const tickRef = useRef(-1)
+  const fps = useFPS()
+  const fpsColor = fps >= 45 ? '#22c55e' : fps >= 30 ? '#eab308' : fps >= 20 ? '#f97316' : '#ef4444'
 
   useEffect(() => {
     if (!gridData || gridData.tick === tickRef.current) return
@@ -64,6 +67,10 @@ export default function SimStats({ gridData, isMobile }) {
         <span style={label}>Tick</span>
         <span style={{ ...val, color: '#64748b' }}>#{gridData.tick}</span>
       </div>
+      <div style={stat}>
+        <span style={label}>FPS</span>
+        <span style={{ ...val, color: fpsColor }}>{fps}</span>
+      </div>
     </div>
   )
 
@@ -108,6 +115,18 @@ export default function SimStats({ gridData, isMobile }) {
         <span style={label}>Active Storms</span>
         <span style={{ color: nStorms > 0 ? '#a855f7' : '#475569', fontWeight: 700, fontSize: '1rem' }}>
           {nStorms > 0 ? `🌀 ${nStorms}` : '—'}
+        </span>
+      </div>
+
+      {/* FPS */}
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '6px 8px', background: '#1e293b33',
+        border: `1px solid ${fpsColor}33`, borderRadius: 8,
+      }}>
+        <span style={label}>Render FPS</span>
+        <span style={{ color: fpsColor, fontWeight: 700, fontSize: '0.9rem' }}>
+          {fps} fps
         </span>
       </div>
 

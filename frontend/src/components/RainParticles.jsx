@@ -1,6 +1,7 @@
 import { useRef, useMemo, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+import { useFPS } from '../hooks/useFPS'
 
 const N_RAIN = 8192
 const SPHERE_MIN = 2.01
@@ -51,6 +52,11 @@ export default function RainParticles({ gridData }) {
   const pointsRef = useRef()
   const geoRef    = useRef()
 
+  const fps = useFPS()
+  const particleBudget = fps >= 45 ? 8192 : fps >= 30 ? 4096 : fps >= 20 ? 2048 : 1024
+  const budgetRef = useRef(8192)
+  budgetRef.current = particleBudget
+
   // Per-particle state
   const lats   = useRef(new Float32Array(N_RAIN))
   const lons   = useRef(new Float32Array(N_RAIN))
@@ -91,6 +97,8 @@ export default function RainParticles({ gridData }) {
   useFrame((_, delta) => {
     if (!pointsRef.current) return
     const posAttr = pointsRef.current.geometry.attributes.position
+    const budget = budgetRef.current
+    pointsRef.current.geometry.setDrawRange(0, budget)
     const spd = 0.012 * delta * 60
     const windScale = 0.00004 * delta * 60
     const c = cumulRef.current
@@ -98,15 +106,14 @@ export default function RainParticles({ gridData }) {
     const hasRain = c && c.totalR > 0
 
     if (!hasRain) {
-      // Hide all particles by pushing them far away
-      for (let i = 0; i < N_RAIN; i++) {
+      for (let i = 0; i < budget; i++) {
         posAttr.array[i*3] = posAttr.array[i*3+1] = posAttr.array[i*3+2] = 9999
       }
       posAttr.needsUpdate = true
       return
     }
 
-    for (let i = 0; i < N_RAIN; i++) {
+    for (let i = 0; i < budget; i++) {
       radii.current[i] -= spd
       if (radii.current[i] < SPHERE_MIN) {
         // Respawn at a rain-weighted cell

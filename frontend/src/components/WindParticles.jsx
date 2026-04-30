@@ -2,6 +2,7 @@ import { useRef, useMemo, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { sampleGrid, latLonToVec3, vec3ToLatLon, GLOBE_RADIUS } from '../utils/geoUtils'
+import { useFPS } from '../hooks/useFPS'
 
 const N = 20000        // particle count (reduced from 30k for mobile perf)
 const R = GLOBE_RADIUS + 0.018
@@ -17,6 +18,11 @@ function randLatLon() {
 
 export default function WindParticles({ gridData }) {
   const pointsRef = useRef()
+
+  const fps = useFPS()
+  const particleBudget = fps >= 45 ? 8192 : fps >= 30 ? 4096 : fps >= 20 ? 2048 : 1024
+  const budgetRef = useRef(8192)
+  budgetRef.current = particleBudget
 
   // Per-particle state stored in typed arrays
   const state = useMemo(() => {
@@ -47,9 +53,10 @@ export default function WindParticles({ gridData }) {
     const g = gridRef.current
     const { lats, lons, ages, lifetimes } = state
     const { positions, colors } = buffers
+    const budget = budgetRef.current
 
     // Local east/north tangent vectors (reusable)
-    for (let i = 0; i < N; i++) {
+    for (let i = 0; i < budget; i++) {
       ages[i] += delta
 
       // Respawn old particles
@@ -107,6 +114,7 @@ export default function WindParticles({ gridData }) {
     }
 
     const geo = pointsRef.current.geometry
+    geo.setDrawRange(0, budget)
     geo.attributes.position.needsUpdate = true
     geo.attributes.color.needsUpdate = true
   })

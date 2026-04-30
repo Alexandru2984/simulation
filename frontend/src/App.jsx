@@ -4,6 +4,7 @@ import WeatherHUD from './components/WeatherHUD'
 import WeatherPopup from './components/WeatherPopup'
 import EventPanel from './components/EventPanel'
 import SimStats from './components/SimStats'
+import ForecastPanel from './components/ForecastPanel'
 import { useWeatherSocket } from './hooks/useWeatherSocket'
 import { useGridSocket } from './hooks/useGridSocket'
 
@@ -40,6 +41,7 @@ export default function App() {
   const [overlayMode, setOverlayMode]     = useState('temp')
   const [popup, setPopup]                 = useState(null)
   const [placementMode, setPlacementMode] = useState(null)   // event type string | null
+  const [previewSnap, setPreviewSnap]     = useState(null)   // null = live data
   const [toast, setToast]                 = useState(null)
   const toastTimerRef                     = useRef(null)
   const isMobile                          = useIsMobile()
@@ -115,6 +117,7 @@ export default function App() {
         flyToLocation={flyToLocation}
         gridData={gridData}
         overlayMode={overlayMode}
+        previewData={previewSnap}
       />
 
       <WeatherHUD
@@ -144,6 +147,9 @@ export default function App() {
           <SimStats gridData={gridData} isMobile={false} />
         </>
       )}
+
+      {/* Forecast / History panel — handles its own mobile/desktop layout */}
+      <ForecastPanel onPreviewSnap={setPreviewSnap} />
 
       {popup && (
         <WeatherPopup lat={popup.lat} lon={popup.lon} onClose={() => setPopup(null)} />
