@@ -38,6 +38,7 @@ export default function App() {
   const { data: gridData }          = useGridSocket()
   const [locations, setLocations]   = useState([])
   const [flyToLocation, setFlyToLocation] = useState(null)
+  const [selectedCity, setSelectedCity]   = useState(null)  // {lat, lon, name} for globe pin
   const [overlayMode, setOverlayMode]     = useState('temp')
   const [popup, setPopup]                 = useState(null)
   const [placementMode, setPlacementMode] = useState(null)   // event type string | null
@@ -91,12 +92,14 @@ export default function App() {
       return
     }
     setFlyToLocation({ lat, lon })
+    setSelectedCity(null)   // clear pin on direct globe click
     setPopup({ lat, lon })
   }, [placementMode, showToast])
 
   const handleSearchSelect = useCallback((lat, lon, name) => {
     handleSeed(lat, lon)
     setPopup({ lat, lon })
+    setSelectedCity({ lat, lon, name })
   }, [handleSeed])
 
   const handleSpeedChange = useCallback((value) => {
@@ -118,6 +121,7 @@ export default function App() {
         gridData={gridData}
         overlayMode={overlayMode}
         previewData={previewSnap}
+        selectedCity={selectedCity}
       />
 
       <WeatherHUD

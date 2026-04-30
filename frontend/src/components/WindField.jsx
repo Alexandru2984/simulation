@@ -1,9 +1,9 @@
-// WindField — renders animated wind arrows at each 18×36 grid point
+// WindField — renders animated wind arrows at each 36×72 grid point
 import { useRef, useMemo, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
-const ROWS = 18, COLS = 36
+const ROWS = 36, COLS = 72
 const COUNT = ROWS * COLS
 
 // Convert grid lat/lon to 3D position on sphere surface
@@ -64,8 +64,8 @@ export default function WindField({ gridData }) {
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const i = r * COLS + c
-        const lat = -85 + r * 10
-        const lon = -175 + c * 10
+        const lat = -87.5 + r * 5
+        const lon = -177.5 + c * 5
 
         const pos  = latLonToVec3(lat, lon, R)
         const u    = U[i], v = V[i]

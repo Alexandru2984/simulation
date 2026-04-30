@@ -20,28 +20,29 @@ export function vec3ToLatLon(x, y, z, r = GLOBE_RADIUS) {
   return { lat, lon }
 }
 
-// Grid geometry: rows 0-17 → lat -85…+85 (step 10), cols 0-35 → lon -175…+175 (step 10)
-export const GRID_ROWS = 18
-export const GRID_COLS = 36
+// Grid geometry: rows 0-35 → lat -87.5…+87.5 (step 5°), cols 0-71 → lon -177.5…+177.5 (step 5°)
+export const GRID_ROWS = 36
+export const GRID_COLS = 72
 
 export function gridIdx(r, c) { return r * GRID_COLS + c }
 
-// Bilinear-interpolated sample from a flat Float32/regular array of size ROWS×COLS
-export function sampleGrid(lat, lon, arr) {
-  const fr = (lat + 85) / 10            // fractional row
-  const fc = ((lon + 175) / 10 + GRID_COLS) % GRID_COLS  // fractional col (wrapped)
+// Bilinear-interpolated sample from a flat array of size ROWS×COLS.
+// Optional rows/cols override for when live gridData dimensions differ.
+export function sampleGrid(lat, lon, arr, rows = GRID_ROWS, cols = GRID_COLS) {
+  const fr = (lat + 87.5) / 5            // fractional row  (5° step, origin at -87.5)
+  const fc = ((lon + 177.5) / 5 + cols) % cols   // fractional col (wrapped)
 
-  const r0 = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(fr)))
-  const r1 = Math.max(0, Math.min(GRID_ROWS - 1, r0 + 1))
-  const c0 = Math.floor(fc) % GRID_COLS
-  const c1 = (c0 + 1) % GRID_COLS
+  const r0 = Math.max(0, Math.min(rows - 1, Math.floor(fr)))
+  const r1 = Math.max(0, Math.min(rows - 1, r0 + 1))
+  const c0 = Math.floor(fc) % cols
+  const c1 = (c0 + 1) % cols
   const tr = fr - Math.floor(fr)
   const tc = fc - Math.floor(fc)
 
-  const v00 = arr[r0 * GRID_COLS + c0]
-  const v01 = arr[r0 * GRID_COLS + c1]
-  const v10 = arr[r1 * GRID_COLS + c0]
-  const v11 = arr[r1 * GRID_COLS + c1]
+  const v00 = arr[r0 * cols + c0] || 0
+  const v01 = arr[r0 * cols + c1] || 0
+  const v10 = arr[r1 * cols + c0] || 0
+  const v11 = arr[r1 * cols + c1] || 0
 
   return v00 * (1 - tr) * (1 - tc)
        + v01 * (1 - tr) * tc
