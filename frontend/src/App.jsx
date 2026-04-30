@@ -19,6 +19,7 @@ const EVENT_LABELS = {
   heat_dome:     '🌡️ Heat Dome',
   cold_outbreak: '❄️ Cold Outbreak',
   blocking_high: '🔵 Blocking High',
+  tornado:       '🌪️ Tornado',
 }
 
 function useIsMobile() {

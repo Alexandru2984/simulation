@@ -1,12 +1,10 @@
-// GridOverlay — renders the 18×36 simulation grid as a coloured DataTexture
+// GridOverlay — renders the simulation grid as a coloured DataTexture
 // draped over the globe as a semi-transparent sphere slightly above Earth.
 import { useRef, useEffect, useMemo } from 'react'
-import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
 // ── Colour maps ───────────────────────────────────────────────────────────────
 function tempColor(t) {
-  // -40°C → deep blue … 0°C → cyan … 15°C → green … 30°C → orange … 50°C → red
   const stops = [
     [-40, [0,   0,   180]],
     [  0, [0,   180, 230]],
@@ -26,7 +24,6 @@ function tempColor(t) {
 }
 
 function pressureColor(p) {
-  // 980 hPa → deep blue … 1013 → white … 1040 → deep red
   const n = Math.max(0, Math.min(1, (p - 980) / 60))
   if (n < 0.5) {
     const f = n * 2
@@ -38,7 +35,6 @@ function pressureColor(p) {
 }
 
 function humidityColor(h) {
-  // 0 → pale yellow … 1 → deep blue
   const f = Math.max(0, Math.min(1, h))
   return [
     Math.round(255 * (1 - f * 0.8)),
@@ -48,8 +44,7 @@ function humidityColor(h) {
 }
 
 function precipColor(r) {
-  // 0 → transparent, >0.5 → blue, >5 → cyan, >20 → white
-  if (r < 0.1) return null  // fully transparent
+  if (r < 0.1) return null
   const f = Math.min(1, r / 20)
   return [
     Math.round(30  + f * 200),
@@ -58,14 +53,25 @@ function precipColor(r) {
   ]
 }
 
-const ROWS = 18, COLS = 36
+function stormColor(sp) {
+  if (sp < 0.5) return null  // transparent
+  if (sp <= 10) {
+    const f = sp / 10
+    return [Math.round(204 * f), Math.round(204 * f), 0]     // black → yellow
+  } else if (sp <= 25) {
+    const f = (sp - 10) / 15
+    return [Math.round(204 + 51 * f), Math.round(204 - 76 * f), 0]  // yellow → orange
+  } else {
+    const f = Math.min(1, (sp - 25) / 25)
+    return [255, Math.round(128 * (1 - f)), 0]               // orange → red
+  }
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function GridOverlay({ gridData, mode = 'temp' }) {
-  const texRef = useRef(null)
+  const texRef  = useRef(null)
   const meshRef = useRef(null)
 
-  // Create a 360×180 DataTexture (10× upscaled from 36×18 for smoothness)
   const TEX_W = 360, TEX_H = 180
   const texData = useMemo(() => new Uint8Array(TEX_W * TEX_H * 4), [])
   const texture  = useMemo(() => {
@@ -78,29 +84,30 @@ export default function GridOverlay({ gridData, mode = 'temp' }) {
 
   useEffect(() => {
     if (!gridData) return
-    const { T, P, H, R } = gridData
+    const { T, P, H, R, SP } = gridData
+    const ROWS = gridData.rows || 18
+    const COLS = gridData.cols || 36
 
-    // Fill texture: each pixel (tx, ty) maps to a grid cell via bilinear sample
     for (let ty = 0; ty < TEX_H; ty++) {
       for (let tx = 0; tx < TEX_W; tx++) {
-        // Map texture pixel to fractional grid coords
         const gc = (tx / TEX_W) * COLS
         const gr = (ty / TEX_H) * ROWS
 
-        // Bilinear interpolation
         const c0 = Math.floor(gc) % COLS, c1 = (c0 + 1) % COLS
         const r0 = Math.min(Math.floor(gr), ROWS - 1)
         const r1 = Math.min(r0 + 1, ROWS - 1)
         const fc = gc - Math.floor(gc), fr = gr - Math.floor(gr)
 
-        const mix = (arr) =>
-          arr[r0 * COLS + c0] * (1 - fc) * (1 - fr) +
-          arr[r0 * COLS + c1] * fc       * (1 - fr) +
-          arr[r1 * COLS + c0] * (1 - fc) * fr +
-          arr[r1 * COLS + c1] * fc       * fr
+        const mix = (arr) => {
+          if (!arr) return 0
+          return (arr[r0 * COLS + c0] || 0) * (1 - fc) * (1 - fr) +
+                 (arr[r0 * COLS + c1] || 0) * fc       * (1 - fr) +
+                 (arr[r1 * COLS + c0] || 0) * (1 - fc) * fr +
+                 (arr[r1 * COLS + c1] || 0) * fc       * fr
+        }
 
         const base = (ty * TEX_W + tx) * 4
-        let rgb, alpha = 160  // default semi-transparent
+        let rgb, alpha = 160
 
         if (mode === 'temp') {
           rgb = tempColor(mix(T)); alpha = 140
@@ -113,6 +120,13 @@ export default function GridOverlay({ gridData, mode = 'temp' }) {
           const c = precipColor(val)
           if (!c) { texData[base+3] = 0; continue }
           rgb = c; alpha = Math.min(220, 80 + val * 10)
+        } else if (mode === 'storm') {
+          const val = mix(SP)
+          const c = stormColor(val)
+          if (!c) { texData[base+3] = 0; continue }
+          rgb = c; alpha = Math.min(200, Math.max(0, val * 6))
+        } else {
+          texData[base+3] = 0; continue
         }
 
         texData[base]   = rgb[0]

@@ -2,9 +2,10 @@ import { useState, useCallback } from 'react'
 
 const EVENTS = [
   { id: 'cyclone',       icon: '🌀', label: 'Cyclone',       color: '#a855f7', desc: 'Drop pressure + rotating winds' },
-  { id: 'heat_dome',     icon: '��️', label: 'Heat Dome',     color: '#f97316', desc: 'Inject +18°C + high pressure'   },
+  { id: 'heat_dome',     icon: '🌡️', label: 'Heat Dome',     color: '#f97316', desc: 'Inject +18°C + high pressure'   },
   { id: 'cold_outbreak', icon: '❄️', label: 'Cold Outbreak', color: '#60a5fa', desc: 'Inject -22°C cold air mass'       },
   { id: 'blocking_high', icon: '🔵', label: 'Blocking High', color: '#34d399', desc: 'Strong anticyclone + dry air'     },
+  { id: 'tornado',       icon: '🌪️', label: 'Tornado',       color: '#fbbf24', desc: 'Intense vortex + pressure drop'  },
 ]
 
 export default function EventPanel({ onStartPlacement, placementMode, isMobile }) {

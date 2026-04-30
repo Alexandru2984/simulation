@@ -9,9 +9,9 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-static constexpr float OMEGA = 7.2921e-5f;  // Earth rotation rad/s
-static constexpr float DT    = 0.05f;        // physics timestep seconds
-static constexpr float PHYSICS_HZ = 10.0f;   // real-time steps per second
+static constexpr float OMEGA      = 7.2921e-5f;  // Earth rotation rad/s
+static constexpr float DT         = 0.05f;        // physics timestep seconds
+static constexpr float PHYSICS_HZ = 10.0f;        // real-time steps per second
 
 GridSim& GridSim::instance() {
     static GridSim inst;
@@ -23,16 +23,14 @@ GridSim::~GridSim() { stop(); }
 
 void GridSim::initGrid() {
     for (int r = 0; r < ROWS; r++) {
-        float lat = cellLat(r);
+        float lat  = cellLat(r);
         float latR = lat * (float)M_PI / 180.0f;
         for (int c = 0; c < COLS; c++) {
             Cell& cell = grid_[idx(r, c)];
-            // Initialise temperature: hot equator, cold poles
             cell.T = 30.0f * std::pow(std::cos(latR), 1.5f) - 10.0f;
             cell.P = 1013.25f + 1.2f * (cell.T - 15.0f);
             cell.U = 0.0f;
             cell.V = 0.0f;
-            // Humidity: tropics moister, poles drier
             cell.H = 0.3f + 0.4f * std::pow(std::cos(latR), 2.0f);
             cell.R = 0.0f;
         }
@@ -53,13 +51,16 @@ void GridSim::setSpeed(float s) {
     speed_.store(std::max(0.5f, std::min(50.0f, s)));
 }
 
-// ── Physics step ─────────────────────────────────────────────────────────────
-void GridSim::step(float dt) {
-    std::array<Cell, SIZE> next = grid_;
+// ── Pure physics step (static) ────────────────────────────────────────────────
+// No member state; safe to call from getForecast() on a copy.
+std::array<GridSim::Cell, GridSim::SIZE> GridSim::physicsStep(
+    const std::array<Cell, SIZE>& grid,
+    float simTime, float dt)
+{
+    std::array<Cell, SIZE> next = grid;
 
-    // Hour angle: one sim-day = 3600 real seconds (fast cycle)
-    float simDay = 3600.0f;
-    float hourAngle0 = (simTime_ / simDay) * 2.0f * (float)M_PI;
+    float simDay    = 3600.0f;
+    float hourAngle0 = (simTime / simDay) * 2.0f * (float)M_PI;
 
     for (int r = 0; r < ROWS; r++) {
         float latDeg = cellLat(r);
@@ -67,12 +68,9 @@ void GridSim::step(float dt) {
         float sinLat = std::sin(latR);
         float cosLat = std::cos(latR);
 
-        // Coriolis parameter
-        float f = 2.0f * OMEGA * sinLat;
-
-        // Grid spacing in metres (approx)
-        float dy = 10.0f * 111000.0f;
-        float dx = dy * std::max(cosLat, 0.05f);  // shrinks near poles
+        float f  = 2.0f * OMEGA * sinLat;   // Coriolis
+        float dy = 5.0f * 111000.0f;         // metres per 5° lat
+        float dx = dy * std::max(cosLat, 0.05f);
 
         for (int c = 0; c < COLS; c++) {
             float lonR = cellLon(c) * (float)M_PI / 180.0f;
@@ -81,32 +79,30 @@ void GridSim::step(float dt) {
             int rU = clampR(r + 1), rD = clampR(r - 1);
             int cR = wrapC(c + 1),  cL = wrapC(c - 1);
 
-            const Cell& cur = grid_[i];
-            const Cell& nN  = grid_[idx(rU, c)];
-            const Cell& nS  = grid_[idx(rD, c)];
-            const Cell& nE  = grid_[idx(r, cR)];
-            const Cell& nW  = grid_[idx(r, cL)];
+            const Cell& cur = grid[i];
+            const Cell& nN  = grid[idx(rU, c)];
+            const Cell& nS  = grid[idx(rD, c)];
+            const Cell& nE  = grid[idx(r, cR)];
+            const Cell& nW  = grid[idx(r, cL)];
 
-            // ── 1. Solar insolation ───────────────────────────────────────
-            float ha = hourAngle0 + lonR;
-            float solar = cosLat * std::cos(ha);
-            float T_eq  = 38.0f * cosLat * cosLat - 25.0f;  // -25°C poles, +13°C equator
+            // 1. Solar insolation
+            float ha      = hourAngle0 + lonR;
+            float solar   = cosLat * std::cos(ha);
+            float T_eq    = 38.0f * cosLat * cosLat - 25.0f;
             float dT_solar = (T_eq + 18.0f * std::max(0.0f, solar) - cur.T) * 0.003f * dt;
 
-            // ── 2. Thermal diffusion ──────────────────────────────────────
-            float T_avg = 0.25f * (nN.T + nS.T + nE.T + nW.T);
+            // 2. Thermal diffusion
+            float T_avg  = 0.25f * (nN.T + nS.T + nE.T + nW.T);
             float dT_diff = (T_avg - cur.T) * 0.12f * dt;
 
-            // ── 3. Pressure relaxation toward temperature ─────────────────
+            // 3. Pressure relaxation toward temperature
             float P_target = 1013.25f + 1.5f * (cur.T - 15.0f);
-            float dP = (P_target - cur.P) * 0.8f * dt;
+            float dP       = (P_target - cur.P) * 0.8f * dt;
 
-            // ── 4. Wind from pressure gradient + Coriolis ─────────────────
-            //    Use hPa/degree directly, tuned coefficient for visual realism
-            float dPdx = (nE.P - nW.P) * 0.5f;   // hPa per 10° lon
-            float dPdy = (nN.P - nS.P) * 0.5f;   // hPa per 10° lat
-            float pgfScale = 0.08f;               // tuned: produces 5-30 m/s winds
-
+            // 4. Wind from pressure gradient force + Coriolis
+            float dPdx   = (nE.P - nW.P) * 0.5f;
+            float dPdy   = (nN.P - nS.P) * 0.5f;
+            float pgfScale = 0.08f;
             float dU = (-dPdx * pgfScale + f * 1e5f * cur.V) * dt;
             float dV = (-dPdy * pgfScale - f * 1e5f * cur.U) * dt;
 
@@ -114,11 +110,10 @@ void GridSim::step(float dt) {
             float newU = cur.U * (1.0f - friction * dt) + dU;
             float newV = cur.V * (1.0f - friction * dt) + dV;
 
-            // Clamp wind speed
             float spd = std::sqrt(newU * newU + newV * newV);
             if (spd > 70.0f) { newU *= 70.0f / spd; newV *= 70.0f / spd; }
 
-            // ── 5. Temperature advection (upwind) ────────────────────────
+            // 5. Temperature advection (upwind scheme)
             float dT_adv = 0.0f;
             if (dx > 0.0f) {
                 dT_adv += (cur.U > 0)
@@ -129,15 +124,13 @@ void GridSim::step(float dt) {
                 ? -cur.V * (cur.T - nS.T) / dy * dt
                 : -cur.V * (nN.T - cur.T) / dy * dt;
 
-            // ── 6. Humidity & precipitation ───────────────────────────────
-            // Evaporation when warm, condensation+rain when supersaturated
+            // 6. Humidity & precipitation
             float evap = (1.0f - cur.H) * 0.004f * std::max(0.0f, cur.T) * dt;
             float H_new = cur.H + evap;
-            // Humidity advection
             float H_avg = 0.25f * (nN.H + nS.H + nE.H + nW.H);
             H_new += (H_avg - cur.H) * 0.03f * dt;
 
-            float H_sat = 0.80f - 0.005f * std::max(0.0f, cur.T - 25.0f);
+            float H_sat  = 0.80f - 0.005f * std::max(0.0f, cur.T - 25.0f);
             float precip = 0.0f;
             if (H_new > H_sat) {
                 precip = (H_new - H_sat) * 25.0f;
@@ -145,9 +138,8 @@ void GridSim::step(float dt) {
             }
             H_new = std::max(0.0f, std::min(1.0f, H_new));
 
-            // ── Accumulate ───────────────────────────────────────────────
             float newT = cur.T + dT_solar + dT_diff + dT_adv;
-            newT = std::max(-80.0f, std::min(60.0f, newT));  // physical bounds
+            newT = std::max(-80.0f, std::min(60.0f, newT));
 
             next[i].T = newT;
             next[i].P = std::max(940.0f, std::min(1060.0f, cur.P + dP));
@@ -157,75 +149,75 @@ void GridSim::step(float dt) {
             next[i].R = precip;
         }
     }
+    return next;
+}
 
+// ── Live physics step ─────────────────────────────────────────────────────────
+void GridSim::step(float dt) {
+    std::array<Cell, SIZE> next = physicsStep(grid_, simTime_, dt);
     {
         std::lock_guard<std::mutex> lk(mutex_);
         grid_ = next;
         drainNudges();
     }
-
     simTime_ += dt * speed_.load();
     tick_++;
 }
 
 // ── Data assimilation ─────────────────────────────────────────────────────────
-// Adds an observation to the nudge buffer using a 2-cell Gaussian stencil.
-// The nudge is drained gradually in drainNudges() so no shocks occur.
 void GridSim::assimilate(float lat, float lon,
                           float T, float P, float U, float V, float H) {
-    // Find nearest grid row/col
-    int r0 = std::clamp((int)std::round((lat  - (-85.0f)) / 10.0f), 0, ROWS - 1);
-    int c0 = ((int)std::round((lon - (-175.0f)) / 10.0f) + COLS) % COLS;
+    int r0 = std::clamp((int)std::round((lat  - (-87.5f)) / 5.0f), 0, ROWS - 1);
+    int c0 = ((int)std::round((lon - (-177.5f)) / 5.0f) + COLS) % COLS;
 
     std::lock_guard<std::mutex> lk(mutex_);
-    // Apply Gaussian weights over a 5×5 stencil (sigma ≈ 1.5 cells)
     for (int dr = -2; dr <= 2; dr++) {
         for (int dc = -2; dc <= 2; dc++) {
             int r = clampR(r0 + dr);
             int c = wrapC(c0 + dc);
-            float sigma2 = 2.25f;  // σ²
-            float w = std::exp(-(dr*dr + dc*dc) / (2.0f * sigma2));
+            float w = std::exp(-(dr*dr + dc*dc) / (2.0f * 2.25f));
             Nudge& n = nudge_[idx(r, c)];
-            n.T += (T - grid_[idx(r,c)].T) * w;
-            n.P += (P - grid_[idx(r,c)].P) * w;
-            n.U += (U - grid_[idx(r,c)].U) * w;
-            n.V += (V - grid_[idx(r,c)].V) * w;
-            n.H += (H - grid_[idx(r,c)].H) * w;
+            n.T      += (T - grid_[idx(r,c)].T) * w;
+            n.P      += (P - grid_[idx(r,c)].P) * w;
+            n.U      += (U - grid_[idx(r,c)].U) * w;
+            n.V      += (V - grid_[idx(r,c)].V) * w;
+            n.H      += (H - grid_[idx(r,c)].H) * w;
             n.weight += w;
         }
     }
 }
 
-// Called from step(): drain nudges at RELAX_RATE per physics step
+// ── Nudge drain ───────────────────────────────────────────────────────────────
 void GridSim::drainNudges() {
-    constexpr float RELAX_RATE = 0.015f;   // ~2% correction per step → ~1.5s to fully apply
-    constexpr float MAX_DELTA_T = 0.5f;    // cap per step to prevent spikes
+    constexpr float RELAX_RATE  = 0.015f;
+    constexpr float MAX_DELTA_T = 0.5f;
     for (int i = 0; i < SIZE; i++) {
         Nudge& n = nudge_[i];
         if (n.weight < 1e-6f) continue;
         Cell& cell = grid_[i];
         float dT = std::clamp(n.T * RELAX_RATE, -MAX_DELTA_T, MAX_DELTA_T);
-        cell.T = std::clamp(cell.T + dT, -80.0f, 60.0f);
+        cell.T = std::clamp(cell.T + dT,           -80.0f, 60.0f);
         cell.P = std::clamp(cell.P + n.P * RELAX_RATE * 0.5f, 940.0f, 1060.0f);
         cell.U += n.U * RELAX_RATE;
         cell.V += n.V * RELAX_RATE;
-        cell.H = std::clamp(cell.H + n.H * RELAX_RATE, 0.0f, 1.0f);
-        // Decay nudge buffer so it naturally fades out after ~1 real second
-        n.T *= (1.0f - RELAX_RATE);
-        n.P *= (1.0f - RELAX_RATE);
-        n.U *= (1.0f - RELAX_RATE);
-        n.V *= (1.0f - RELAX_RATE);
-        n.H *= (1.0f - RELAX_RATE);
+        cell.H  = std::clamp(cell.H + n.H * RELAX_RATE, 0.0f, 1.0f);
+        n.T      *= (1.0f - RELAX_RATE);
+        n.P      *= (1.0f - RELAX_RATE);
+        n.U      *= (1.0f - RELAX_RATE);
+        n.V      *= (1.0f - RELAX_RATE);
+        n.H      *= (1.0f - RELAX_RATE);
         n.weight *= (1.0f - RELAX_RATE);
     }
 }
 
-// ── Inject (user weather events) ─────────────────────────────────────────────
-// Directly modifies grid under lock — creates immediate visible effect.
+// ── Event injection ───────────────────────────────────────────────────────────
 void GridSim::inject(float lat, float lon, EventType type, float intensity) {
-    int r0 = std::clamp((int)std::round((lat  - (-85.0f)) / 10.0f), 0, ROWS - 1);
-    int c0 = ((int)std::round((lon - (-175.0f)) / 10.0f) + COLS) % COLS;
+    int r0 = std::clamp((int)std::round((lat  - (-87.5f)) / 5.0f), 0, ROWS - 1);
+    int c0 = ((int)std::round((lon - (-177.5f)) / 5.0f) + COLS) % COLS;
     float latCell = cellLat(r0);
+
+    // TORNADO uses tighter Gaussian (σ=1 cell); others use σ=2
+    float sigma2 = (type == EventType::TORNADO) ? 1.0f : 4.0f;
 
     std::lock_guard<std::mutex> lk(mutex_);
 
@@ -233,34 +225,27 @@ void GridSim::inject(float lat, float lon, EventType type, float intensity) {
         for (int dc = -3; dc <= 3; dc++) {
             int r = clampR(r0 + dr);
             int c = wrapC(c0 + dc);
-            float sigma2 = 4.0f;  // σ=2 cells
-            float w = std::exp(-(dr*dr + dc*dc) / (2.0f * sigma2));
-            Cell& cell = grid_[idx(r, c)];
-
+            float w      = std::exp(-(dr*dr + dc*dc) / (2.0f * sigma2));
             float r_dist = std::sqrt((float)(dr*dr + dc*dc));
+            Cell& cell   = grid_[idx(r, c)];
 
             switch (type) {
             case EventType::CYCLONE: {
-                // Strong pressure drop + cyclonic wind rotation
-                cell.P = std::max(940.0f, cell.P - 28.0f * intensity * w);
+                cell.P  = std::max(940.0f, cell.P - 28.0f * intensity * w);
                 cell.T -= 2.0f * intensity * w;
-                cell.H = std::min(1.0f, cell.H + 0.3f * w);
+                cell.H  = std::min(1.0f, cell.H + 0.3f * w);
                 if (r_dist > 0.1f) {
-                    float v_max = 25.0f * intensity * w * (1.5f - r_dist / 4.0f);
-                    v_max = std::max(0.0f, v_max);
-                    // CCW in NH (lat>0), CW in SH (lat<0)
-                    float sign = (latCell >= 0.0f) ? 1.0f : -1.0f;
-                    // Tangent vector CCW: rotate radius (dc, dr) 90° CCW → (-dr, dc)
+                    float v_max = 25.0f * intensity * w * std::max(0.0f, 1.5f - r_dist / 4.0f);
+                    float sign  = (latCell >= 0.0f) ? 1.0f : -1.0f;
                     cell.U += sign * (-float(dr) / r_dist) * v_max;
                     cell.V += sign * ( float(dc) / r_dist) * v_max;
                 }
                 break;
             }
             case EventType::HEAT_DOME: {
-                cell.T = std::min(60.0f, cell.T + 18.0f * intensity * w);
-                cell.P = std::min(1060.0f, cell.P + 8.0f * intensity * w);
-                cell.H = std::max(0.0f, cell.H - 0.2f * w);
-                // Diverging wind (outward from center, subsidence)
+                cell.T  = std::min(60.0f,   cell.T + 18.0f * intensity * w);
+                cell.P  = std::min(1060.0f, cell.P +  8.0f * intensity * w);
+                cell.H  = std::max(0.0f,    cell.H -  0.2f * w);
                 if (r_dist > 0.1f) {
                     float v_max = 8.0f * intensity * w;
                     cell.U += (float(dc) / r_dist) * v_max;
@@ -269,10 +254,9 @@ void GridSim::inject(float lat, float lon, EventType type, float intensity) {
                 break;
             }
             case EventType::COLD_OUTBREAK: {
-                cell.T = std::max(-80.0f, cell.T - 22.0f * intensity * w);
-                cell.P = std::min(1060.0f, cell.P + 12.0f * intensity * w);
-                cell.H = std::min(1.0f, cell.H + 0.15f * w);
-                // Outward spreading cold air
+                cell.T  = std::max(-80.0f,  cell.T - 22.0f * intensity * w);
+                cell.P  = std::min(1060.0f, cell.P + 12.0f * intensity * w);
+                cell.H  = std::min(1.0f,    cell.H +  0.15f * w);
                 if (r_dist > 0.1f) {
                     float v_max = 12.0f * intensity * w;
                     cell.U += (float(dc) / r_dist) * v_max;
@@ -281,16 +265,31 @@ void GridSim::inject(float lat, float lon, EventType type, float intensity) {
                 break;
             }
             case EventType::BLOCKING_HIGH: {
-                cell.P = std::min(1060.0f, cell.P + 22.0f * intensity * w);
+                cell.P  = std::min(1060.0f, cell.P + 22.0f * intensity * w);
                 cell.T -= 4.0f * intensity * w;
-                cell.H = std::max(0.0f, cell.H - 0.25f * w);
-                // Strongly diverging anticyclonic wind
+                cell.H  = std::max(0.0f, cell.H - 0.25f * w);
                 if (r_dist > 0.1f) {
                     float v_max = 18.0f * intensity * w;
-                    // Anticyclonic: CW in NH, CCW in SH
-                    float sign = (latCell >= 0.0f) ? -1.0f : 1.0f;
+                    float sign  = (latCell >= 0.0f) ? -1.0f : 1.0f;
                     cell.U += sign * (-float(dr) / r_dist) * v_max;
                     cell.V += sign * ( float(dc) / r_dist) * v_max;
+                }
+                break;
+            }
+            case EventType::TORNADO: {
+                // Tight vortex: extreme wind, deep pressure drop, high humidity
+                cell.P  = std::max(940.0f, cell.P - 30.0f * intensity * w);
+                cell.T -= 1.5f * intensity * w;
+                cell.H  = std::min(1.0f, cell.H + 0.4f * w);
+                if (r_dist > 0.1f) {
+                    // v_max peaks at r_dist=0.5 cell, falls off quickly
+                    float v_max = 55.0f * intensity * w * std::max(0.0f, 1.8f - r_dist);
+                    float sign  = (latCell >= 0.0f) ? 1.0f : -1.0f;
+                    cell.U += sign * (-float(dr) / r_dist) * v_max;
+                    cell.V += sign * ( float(dc) / r_dist) * v_max;
+                    // Clamp per-cell to physical max
+                    float spd = std::sqrt(cell.U * cell.U + cell.V * cell.V);
+                    if (spd > 70.0f) { cell.U *= 70.0f / spd; cell.V *= 70.0f / spd; }
                 }
                 break;
             }
@@ -299,7 +298,7 @@ void GridSim::inject(float lat, float lon, EventType type, float intensity) {
     }
 }
 
-
+// ── Main loop ─────────────────────────────────────────────────────────────────
 void GridSim::loop() {
     using clock = std::chrono::steady_clock;
     constexpr auto interval = std::chrono::milliseconds(
@@ -308,15 +307,32 @@ void GridSim::loop() {
     while (running_.load()) {
         auto t0 = clock::now();
 
-        // Run multiple physics steps per real tick (speed multiplier)
         int steps = std::max(1, static_cast<int>(speed_.load()));
         for (int i = 0; i < steps; i++) step(DT);
 
+        // Record history snapshot every 30 ticks (~3 real seconds)
+        if (tick_.load() % 30 == 0) recordHistory();
+
         auto elapsed = clock::now() - t0;
-        auto sleep = interval - elapsed;
+        auto sleep   = interval - elapsed;
         if (sleep > std::chrono::milliseconds(0))
             std::this_thread::sleep_for(sleep);
     }
+}
+
+// ── History ring buffer ───────────────────────────────────────────────────────
+void GridSim::recordHistory() {
+    Snapshot snap;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        snap.step    = tick_.load();
+        snap.simTime = simTime_;
+        snap.grid    = grid_;
+    }
+    std::lock_guard<std::mutex> lk(histMtx_);
+    history_[histHead_] = snap;
+    histHead_ = (histHead_ + 1) % HISTORY_CAP;
+    if (histCount_ < HISTORY_CAP) histCount_++;
 }
 
 // ── Accessors ─────────────────────────────────────────────────────────────────
@@ -325,60 +341,201 @@ std::array<GridSim::Cell, GridSim::SIZE> GridSim::getGrid() const {
     return grid_;
 }
 
-std::string GridSim::getStateJson() const {
-    std::lock_guard<std::mutex> lk(mutex_);
-    auto& g = grid_;
+// ── Forecast ─────────────────────────────────────────────────────────────────
+// Runs N physics steps on a deep copy of current state (no sleep, no nudges).
+// Returns JSON array of snapshots, one per 10 steps.
+std::string GridSim::getForecast(int steps) const {
+    steps = std::max(1, std::min(200, steps));
 
-    // ── Compute zonal mean pressure per row (for anomaly-based storm detection) ──
-    std::array<float, ROWS> zonalP{};
-    for (int r = 0; r < ROWS; r++) {
-        float sum = 0;
-        for (int c = 0; c < COLS; c++) sum += g[idx(r, c)].P;
-        zonalP[r] = sum / COLS;
+    // Deep copy under lock
+    std::array<Cell, SIZE> g;
+    float st;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        g  = grid_;
+        st = simTime_;
     }
 
-    // ── Detect storms: local pressure minimum + anomaly < -6 hPa + wind > 7 m/s ──
+    std::ostringstream os;
+    os << std::fixed << std::setprecision(1);
+    os << "[{\"step\":0,\"simTime\":" << st
+       << ",\"rows\":" << ROWS << ",\"cols\":" << COLS
+       << ",\"T\":[";
+    for (int i = 0; i < SIZE; i++) { os << g[i].T; if (i < SIZE-1) os << ','; }
+    os << "],\"P\":[";
+    for (int i = 0; i < SIZE; i++) { os << g[i].P; if (i < SIZE-1) os << ','; }
+    os << "],\"U\":[";
+    for (int i = 0; i < SIZE; i++) { os << g[i].U; if (i < SIZE-1) os << ','; }
+    os << "],\"V\":[";
+    for (int i = 0; i < SIZE; i++) { os << g[i].V; if (i < SIZE-1) os << ','; }
+    os << "],\"H\":[";
+    for (int i = 0; i < SIZE; i++) { os << g[i].H; if (i < SIZE-1) os << ','; }
+    os << "],\"R\":[";
+    for (int i = 0; i < SIZE; i++) { os << g[i].R; if (i < SIZE-1) os << ','; }
+    os << "]}";
+
+    for (int s = 1; s <= steps; s++) {
+        g   = physicsStep(g, st, DT);
+        st += DT;
+
+        if (s % 10 == 0 || s == steps) {
+            os << ",{\"step\":" << s << ",\"simTime\":" << st
+               << ",\"rows\":" << ROWS << ",\"cols\":" << COLS
+               << ",\"T\":[";
+            for (int i = 0; i < SIZE; i++) { os << g[i].T; if (i < SIZE-1) os << ','; }
+            os << "],\"P\":[";
+            for (int i = 0; i < SIZE; i++) { os << g[i].P; if (i < SIZE-1) os << ','; }
+            os << "],\"U\":[";
+            for (int i = 0; i < SIZE; i++) { os << g[i].U; if (i < SIZE-1) os << ','; }
+            os << "],\"V\":[";
+            for (int i = 0; i < SIZE; i++) { os << g[i].V; if (i < SIZE-1) os << ','; }
+            os << "],\"H\":[";
+            for (int i = 0; i < SIZE; i++) { os << g[i].H; if (i < SIZE-1) os << ','; }
+            os << "],\"R\":[";
+            for (int i = 0; i < SIZE; i++) { os << g[i].R; if (i < SIZE-1) os << ','; }
+            os << "]}";
+        }
+    }
+    os << "]";
+    return os.str();
+}
+
+// ── History retrieval ─────────────────────────────────────────────────────────
+std::string GridSim::getHistory(int limit) const {
+    limit = std::max(1, std::min(limit, HISTORY_CAP));
+
+    std::lock_guard<std::mutex> lk(histMtx_);
+    if (histCount_ == 0) return "[]";
+
+    // Walk backward from most recent (histHead_-1) to oldest within limit
+    int count   = std::min(limit, histCount_);
+    // Start from oldest of the `count` we'll return
+    int startIdx = ((histHead_ - count) % HISTORY_CAP + HISTORY_CAP) % HISTORY_CAP;
+
+    std::ostringstream os;
+    os << std::fixed << std::setprecision(1);
+    os << '[';
+    for (int n = 0; n < count; n++) {
+        int i = (startIdx + n) % HISTORY_CAP;
+        const Snapshot& snap = history_[i];
+        if (n > 0) os << ',';
+        os << "{\"step\":" << snap.step
+           << ",\"simTime\":" << snap.simTime
+           << ",\"rows\":" << ROWS << ",\"cols\":" << COLS
+           << ",\"T\":[";
+        for (int k = 0; k < SIZE; k++) { os << snap.grid[k].T; if (k<SIZE-1) os<<','; }
+        os << "],\"U\":[";
+        for (int k = 0; k < SIZE; k++) { os << snap.grid[k].U; if (k<SIZE-1) os<<','; }
+        os << "],\"V\":[";
+        for (int k = 0; k < SIZE; k++) { os << snap.grid[k].V; if (k<SIZE-1) os<<','; }
+        os << "],\"P\":[";
+        for (int k = 0; k < SIZE; k++) { os << snap.grid[k].P; if (k<SIZE-1) os<<','; }
+        os << "]}";
+    }
+    os << ']';
+    return os.str();
+}
+
+// ── JSON state output ─────────────────────────────────────────────────────────
+std::string GridSim::getStateJson() const {
+    std::lock_guard<std::mutex> lk(mutex_);
+    const auto& g = grid_;
+
+    // ── Zonal means for anomaly-based detection ──
+    std::array<float, ROWS> zonalP{}, zonalT{};
+    for (int r = 0; r < ROWS; r++) {
+        float sumP = 0, sumT = 0;
+        for (int c = 0; c < COLS; c++) {
+            sumP += g[idx(r, c)].P;
+            sumT += g[idx(r, c)].T;
+        }
+        zonalP[r] = sumP / COLS;
+        zonalT[r] = sumT / COLS;
+    }
+
+    // ── Storm detection ──
     std::string storms = "[";
     bool firstStorm = true;
     for (int r = 1; r < ROWS - 1; r++) {
         for (int c = 0; c < COLS; c++) {
             int i = idx(r, c);
-            float P = g[i].P;
-            float anomaly = P - zonalP[r];
-            if (anomaly > -6.0f) continue;  // not anomalously low
+            float P_anom = g[i].P - zonalP[r];
+            if (P_anom > -6.0f) continue;
             float windSpd = std::sqrt(g[i].U * g[i].U + g[i].V * g[i].V);
             if (windSpd < 7.0f) continue;
-            // Check it's a local minimum vs 4 neighbors
-            bool isMin = P < g[idx(clampR(r-1), c)].P &&
-                         P < g[idx(clampR(r+1), c)].P &&
-                         P < g[idx(r, wrapC(c-1))].P &&
-                         P < g[idx(r, wrapC(c+1))].P;
+            bool isMin = g[i].P < g[idx(clampR(r-1), c)].P &&
+                         g[i].P < g[idx(clampR(r+1), c)].P &&
+                         g[i].P < g[idx(r, wrapC(c-1))].P &&
+                         g[i].P < g[idx(r, wrapC(c+1))].P;
             if (!isMin) continue;
-            char buf[192];
-            float lat = cellLat(r), lon = cellLon(c);
+            char buf[200];
             std::snprintf(buf, sizeof(buf),
                 "%s{\"lat\":%.1f,\"lon\":%.1f,\"P\":%.1f,\"anom\":%.1f,\"wind\":%.1f}",
-                firstStorm ? "" : ",", lat, lon, P, anomaly, windSpd);
+                firstStorm ? "" : ",",
+                cellLat(r), cellLon(c), g[i].P, P_anom, windSpd);
             storms += buf;
             firstStorm = false;
         }
     }
     storms += "]";
 
-    // ── Compute area-weighted global stats (cos(lat) weighting) ──
+    // ── Frontal zone detection ──
+    // Compute row-mean temperature gradient magnitude to normalize against background.
+    // A "frontal zone" is a cell whose gradient exceeds its row mean by 2.5 °C/10°.
+    std::array<float, SIZE> gradT{};
+    for (int r = 0; r < ROWS; r++) {
+        for (int c = 0; c < COLS; c++) {
+            int rU = clampR(r + 1), rD = clampR(r - 1);
+            int cR = wrapC(c + 1),  cL = wrapC(c - 1);
+            float dTdx = (g[idx(r,cR)].T - g[idx(r,cL)].T) * 0.5f;
+            float dTdy = (g[idx(rU,c)].T - g[idx(rD,c)].T) * 0.5f;
+            gradT[idx(r, c)] = std::sqrt(dTdx*dTdx + dTdy*dTdy);
+        }
+    }
+    std::array<float, ROWS> rowMeanGrad{};
+    for (int r = 0; r < ROWS; r++) {
+        float sum = 0;
+        for (int c = 0; c < COLS; c++) sum += gradT[idx(r, c)];
+        rowMeanGrad[r] = sum / COLS;
+    }
+
+    std::string fronts = "[";
+    bool firstFront = true;
+    for (int r = 1; r < ROWS - 1; r++) {
+        for (int c = 0; c < COLS; c++) {
+            float intensity = gradT[idx(r, c)] - rowMeanGrad[r];
+            if (intensity < 2.5f) continue;    // below-threshold: not a front
+            char buf[128];
+            std::snprintf(buf, sizeof(buf),
+                "%s{\"lat\":%.1f,\"lon\":%.1f,\"intensity\":%.2f}",
+                firstFront ? "" : ",", cellLat(r), cellLon(c), intensity);
+            fronts += buf;
+            firstFront = false;
+        }
+    }
+    fronts += "]";
+
+    // ── StormPotential per cell (proxy for convective instability) ──
+    // High SP = warm+moist+low-pressure anomaly at same location
+    // SP = max(0, warmAnomaly) * H * max(0, pressureAnomaly/5)
+    // This favors thunderstorm conditions without claiming CAPE accuracy.
+
+    // ── Global area-weighted stats (cos-lat weighting) ──
     float sumT = 0, sumWind = 0, sumPrecip = 0, totalW = 0;
     for (int r = 0; r < ROWS; r++) {
         float lat = cellLat(r);
-        float w = std::cos(lat * 3.14159f / 180.0f);
+        float w   = std::cos(lat * (float)M_PI / 180.0f);
         for (int c = 0; c < COLS; c++) {
             int i = idx(r, c);
-            sumT     += g[i].T * w;
-            sumWind  += std::sqrt(g[i].U * g[i].U + g[i].V * g[i].V) * w;
-            sumPrecip+= g[i].R * w;
-            totalW   += w;
+            sumT      += g[i].T * w;
+            sumWind   += std::sqrt(g[i].U * g[i].U + g[i].V * g[i].V) * w;
+            sumPrecip += g[i].R * w;
+            totalW    += w;
         }
     }
-    float avgT = sumT / totalW, avgWind = sumWind / totalW, avgPrecip = sumPrecip / totalW;
+    float avgT     = sumT     / totalW;
+    float avgWind  = sumWind  / totalW;
+    float avgPrecip = sumPrecip / totalW;
 
     std::ostringstream os;
     os << std::fixed << std::setprecision(2);
@@ -396,6 +553,7 @@ std::string GridSim::getStateJson() const {
        << "\"tick\":"     << tick_.load()  << ','
        << "\"cols\":"     << COLS          << ','
        << "\"rows\":"     << ROWS          << ','
+       << "\"simTime\":"  << simTime_      << ','
        << "\"avgT\":"     << avgT          << ','
        << "\"avgWind\":"  << avgWind       << ','
        << "\"avgPrecip\":" << avgPrecip    << ',';
@@ -406,9 +564,22 @@ std::string GridSim::getStateJson() const {
     arr("V", [](const Cell& c) { return c.V; }); os << ',';
     arr("H", [](const Cell& c) { return c.H; }); os << ',';
     arr("R", [](const Cell& c) { return c.R; }); os << ',';
-    os << "\"storms\":" << storms;
+
+    // StormPotential: warm+moist+low-pressure anomaly proxy
+    os << "\"SP\":[";
+    for (int i = 0; i < SIZE; i++) {
+        int r = i / COLS;
+        float warmAnom = std::max(0.0f, g[i].T - zonalT[r]);
+        float presAnom = std::max(0.0f, (zonalP[r] - g[i].P) / 5.0f);
+        float sp = warmAnom * g[i].H * presAnom;
+        os << std::setprecision(1) << sp;
+        if (i < SIZE - 1) os << ',';
+    }
+    os << ']';
+
+    os << ",\"storms\":"  << storms;
+    os << ",\"fronts\":"  << fronts;
 
     os << '}';
     return os.str();
 }
-

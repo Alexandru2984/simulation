@@ -10,6 +10,7 @@ import RainParticles from './RainParticles'
 import GridOverlay from './GridOverlay'
 import WindField from './WindField'
 import StormLabels from './StormLabels'
+import FrontalLayer from './FrontalLayer'
 
 function latLonToVec3(lat, lon, r = 4.5) {
   const latRad = (lat * Math.PI) / 180
@@ -42,10 +43,9 @@ function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode
 
   const wd       = weatherData
   const temp     = wd?.temperature    ?? 20
-  const pressure = wd?.pressure       ?? 1013
   const wSpeed   = wd?.wind_speed     ?? 3
   const wDir     = wd?.wind_direction ?? 90
-  const isRain   = pressure < 1010
+  const simTime  = gridData?.simTime  ?? 0
 
   return (
     <>
@@ -54,13 +54,13 @@ function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode
       <Stars radius={100} depth={60} count={6000} factor={4} saturation={0} fade />
 
       <Suspense fallback={null}>
-        <EarthGlobe temperature={temp} onGlobeClick={onGlobeClick} />
-        <CloudLayer windDirection={wDir} windSpeed={wSpeed} />
+        <EarthGlobe temperature={temp} simTime={simTime} onGlobeClick={onGlobeClick} />
+        <CloudLayer windDirection={wDir} windSpeed={wSpeed} gridData={gridData} />
       </Suspense>
 
       {/* Wind particles driven by grid data */}
       <WindParticles gridData={gridData} />
-      <RainParticles pressure={pressure} active={isRain} />
+      <RainParticles gridData={gridData} />
       <Atmosphere temperature={temp} />
 
       {overlayMode && overlayMode !== 'wind' && overlayMode !== 'none' && (
@@ -73,6 +73,11 @@ function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode
       {/* Storm labels on globe */}
       {gridData?.storms?.length > 0 && (
         <StormLabels storms={gridData.storms} />
+      )}
+
+      {/* Frontal system markers */}
+      {gridData?.fronts?.length > 0 && (
+        <FrontalLayer fronts={gridData.fronts} />
       )}
 
       <OrbitControls

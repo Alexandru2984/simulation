@@ -343,6 +343,7 @@ const OVERLAY_MODES = [
   { id: 'humidity', label: '💧 Humidity', color: '#34d399' },
   { id: 'precip',   label: '🌧 Precip',   color: '#818cf8' },
   { id: 'wind',     label: '💨 Wind',     color: '#38bdf8' },
+  { id: 'storm',    label: '⚡ Storm',    color: '#f59e0b' },
 ]
 
 function ModeBar({ overlayMode, onOverlayMode, isMobile }) {

@@ -59,6 +59,7 @@ void GridRestController::inject(
     else if (typeStr == "heat_dome")     type = GridSim::EventType::HEAT_DOME;
     else if (typeStr == "cold_outbreak") type = GridSim::EventType::COLD_OUTBREAK;
     else if (typeStr == "blocking_high") type = GridSim::EventType::BLOCKING_HIGH;
+    else if (typeStr == "tornado")       type = GridSim::EventType::TORNADO;
     else { cb(jsonResp("{\"error\":\"unknown type\"}", drogon::k400BadRequest)); return; }
 
     GridSim::instance().inject(lat, lon, type, std::max(0.1f, std::min(3.0f, intensity)));
@@ -96,5 +97,32 @@ void GridWsController::broadcastGrid() {
     std::lock_guard<std::mutex> lk(wsGridMtx);
     for (auto& conn : wsGridClients)
         conn->send(json);
+}
+
+void GridRestController::forecast(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& cb) const
+{
+    if (req->method() == drogon::Options) { cb(jsonResp("{}")); return; }
+
+    int steps = 100;  // default: 100 steps → 10 snapshots
+    auto j = req->jsonObject();
+    if (j && (*j).isMember("steps") && (*j)["steps"].isInt()) {
+        steps = std::max(1, std::min(200, (*j)["steps"].asInt()));
+    }
+    cb(jsonResp(GridSim::instance().getForecast(steps)));
+}
+
+void GridRestController::getHistory(
+    const drogon::HttpRequestPtr& req,
+    std::function<void(const drogon::HttpResponsePtr&)>&& cb) const
+{
+    int limit = 30;  // default: last 30 snapshots (~90 real seconds)
+    auto limitStr = req->getParameter("limit");
+    if (!limitStr.empty()) {
+        try { limit = std::max(1, std::min(120, std::stoi(limitStr))); }
+        catch (...) {}
+    }
+    cb(jsonResp(GridSim::instance().getHistory(limit)));
 }
 

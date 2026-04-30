@@ -1,14 +1,16 @@
 import { useRef, useMemo } from 'react'
-import { useLoader } from '@react-three/fiber'
+import { useLoader, useFrame } from '@react-three/fiber'
 import { TextureLoader } from 'three'
 import * as THREE from 'three'
 
 const vertexShader = `
   varying vec2 vUv;
   varying vec3 vNormal;
+  varying vec3 vWorldNormal;
   void main() {
     vUv = uv;
     vNormal = normalize(normalMatrix * normal);
+    vWorldNormal = normalize(normal);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `
@@ -16,8 +18,10 @@ const fragmentShader = `
   uniform sampler2D earthTexture;
   uniform sampler2D specularTexture;
   uniform float temperature;
+  uniform vec3 sunDir;
   varying vec2 vUv;
   varying vec3 vNormal;
+  varying vec3 vWorldNormal;
 
   vec3 tempTint(float t) {
     float n = clamp((t + 15.0) / 65.0, 0.0, 1.0);
@@ -32,18 +36,28 @@ const fragmentShader = `
     vec4 earth = texture2D(earthTexture, vUv);
     vec4 spec  = texture2D(specularTexture, vUv);
     vec3 tint  = tempTint(temperature);
-    // Blend tint only on land (low specular = land)
     float landMask = 1.0 - spec.r;
     vec3 color = mix(earth.rgb, earth.rgb * tint, landMask * 0.35);
     // Basic diffuse
     vec3 lightDir = normalize(vec3(1.0, 0.5, 1.0));
     float diff = max(dot(vNormal, lightDir), 0.1);
-    gl_FragColor = vec4(color * diff, 1.0);
+    color = color * diff;
+    // Day/night cycle
+    float cosZ = dot(vWorldNormal, normalize(sunDir));
+    float nightBlend = 1.0 - pow(clamp(cosZ, 0.0, 1.0), 0.7);
+    float dayFactor = 0.15 + 0.85 * (1.0 - nightBlend);
+    color = color * dayFactor;
+    gl_FragColor = vec4(color, 1.0);
   }
 `
 
-export default function EarthGlobe({ temperature = 20, onGlobeClick }) {
+export default function EarthGlobe({ temperature = 20, simTime = 0, onGlobeClick }) {
   const meshRef = useRef()
+  const simTimeRef = useRef(simTime)
+  const tempRef = useRef(temperature)
+  simTimeRef.current = simTime
+  tempRef.current = temperature
+
   const [earthTex, specTex] = useLoader(TextureLoader, [
     '/textures/earth.jpg',
     '/textures/earth_specular.jpg',
@@ -53,19 +67,27 @@ export default function EarthGlobe({ temperature = 20, onGlobeClick }) {
     earthTexture:    { value: earthTex },
     specularTexture: { value: specTex  },
     temperature:     { value: temperature },
-  }), [earthTex, specTex])
+    sunDir:          { value: new THREE.Vector3(1, 0, 0) },
+  }), [earthTex, specTex]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Keep temperature uniform updated without re-creating material
-  if (meshRef.current) {
-    meshRef.current.material.uniforms.temperature.value = temperature
-  }
+  useFrame(() => {
+    if (!meshRef.current) return
+    const mat = meshRef.current.material
+    mat.uniforms.temperature.value = tempRef.current
+
+    const st = simTimeRef.current
+    const hourAngle = (st / 3600) * 2 * Math.PI
+    const decl = 23.5 * (Math.PI / 180) * Math.sin((st / (365 * 3600)) * 2 * Math.PI)
+    mat.uniforms.sunDir.value.set(
+      Math.cos(decl) * Math.cos(-hourAngle),
+      Math.sin(decl),
+      Math.cos(decl) * Math.sin(-hourAngle)
+    )
+  })
 
   const handleClick = (e) => {
     e.stopPropagation()
     const p = e.point.clone().normalize()
-    // Inverse of Three.js SphereGeometry mapping: lon=0→+X, lon=90E→-Z
-    // x = -cos(lat)*cos((lon+180)°), z = cos(lat)*sin((lon+180)°)
-    // → lonRad = atan2(z, -x), lon = lonRad*180/π - 180
     const lat = Math.asin(p.y) * (180 / Math.PI)
     const lon = Math.atan2(p.z, -p.x) * (180 / Math.PI) - 180
     onGlobeClick?.(lat, lon)
