@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(window.innerWidth < 768)
@@ -76,6 +76,9 @@ export default function ForecastPanel({ onPreviewSnap }) {
   const [selectedForecast, setSelectedForecast] = useState(null)
   const [historyIdx, setHistoryIdx]             = useState(0)
   const [isPreview, setIsPreview]               = useState(false)
+  const [playing, setPlaying]                   = useState(false)
+  const [playSpeed, setPlaySpeed]               = useState(1)   // frames per tick
+  const playRef                                 = useRef(null)
 
   const goLive = useCallback(() => {
     setIsPreview(false)
@@ -125,6 +128,23 @@ export default function ForecastPanel({ onPreviewSnap }) {
     setHistoryIdx(idx)
     if (historyData?.[idx]) { setIsPreview(true); onPreviewSnap(historyData[idx]) }
   }, [historyData, onPreviewSnap])
+
+  // Auto-play: advance history slider at playSpeed frames per 200ms tick
+  useEffect(() => {
+    if (playing && historyData?.length > 0) {
+      playRef.current = setInterval(() => {
+        setHistoryIdx(prev => {
+          const next = prev + playSpeed >= historyData.length ? 0 : prev + playSpeed
+          if (historyData[next]) { setIsPreview(true); onPreviewSnap(historyData[next]) }
+          return next
+        })
+      }, 200)
+    }
+    return () => clearInterval(playRef.current)
+  }, [playing, playSpeed, historyData, onPreviewSnap])
+
+  // Stop playback when switching tabs or collapsing
+  useEffect(() => { if (!expanded) setPlaying(false) }, [expanded])
 
   const tempDelta = (() => {
     if (!forecastData || forecastData.length < 2) return null
@@ -214,8 +234,30 @@ export default function ForecastPanel({ onPreviewSnap }) {
 
           {historyData && historyData.length > 0 && (
             <>
-              <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.68rem', textAlign: 'center' }}>
-                {historyData.length} snapshots — drag to replay
+              {/* Playback controls */}
+              <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                <button onClick={() => setPlaying(p => !p)} style={{
+                  flex: 1, padding: '6px 0', borderRadius: 8, fontSize: '0.8rem',
+                  background: playing ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.15)',
+                  border: `1px solid ${playing ? '#ef4444' : '#3b82f6'}`,
+                  color: playing ? '#ef4444' : '#60a5fa',
+                  cursor: 'pointer', fontWeight: 700,
+                }}>
+                  {playing ? '⏸ Pause' : '▶ Play'}
+                </button>
+                {[1, 2, 4].map(s => (
+                  <button key={s} onClick={() => setPlaySpeed(s)} style={{
+                    width: 34, padding: '6px 0', borderRadius: 8, fontSize: '0.72rem',
+                    background: playSpeed === s ? 'rgba(59,130,246,0.2)' : 'transparent',
+                    border: `1px solid ${playSpeed === s ? '#3b82f6' : 'rgba(255,255,255,0.1)'}`,
+                    color: playSpeed === s ? '#60a5fa' : 'rgba(255,255,255,0.3)',
+                    cursor: 'pointer',
+                  }}>{s}×</button>
+                ))}
+              </div>
+
+              <div style={{ color: 'rgba(255,255,255,0.25)', fontSize: '0.63rem', textAlign: 'center' }}>
+                {historyData.length} snapshots · {historyIdx + 1}/{historyData.length}
               </div>
               <input type="range" min={0} max={historyData.length - 1} value={historyIdx}
                 onChange={handleHistorySlider}

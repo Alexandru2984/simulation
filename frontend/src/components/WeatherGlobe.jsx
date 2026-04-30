@@ -58,20 +58,40 @@ function CityPin({ location, name }) {
   )
 }
 
-function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode, previewData, selectedCity }) {
+function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode, previewData, selectedCity, tourActive }) {
   const controlsRef  = useRef()
   const flyTargetRef = useRef(null)
   const { camera }   = useThree()
-  // Incrementing this key remounts OrbitControls fresh — clears damping velocity after fly
   const [controlsKey, setControlsKey] = useState(0)
+  const tourIdxRef   = useRef(0)
+  const tourTimerRef = useRef(null)
 
   useEffect(() => {
     if (!flyToLocation) return
-    // Stay at comfortable viewing distance (4.2) regardless of current zoom
     flyTargetRef.current = latLonToVec3(flyToLocation.lat, flyToLocation.lon, 4.2)
-    // Disable controls so they don't fight the lerp animation
     if (controlsRef.current) controlsRef.current.enabled = false
   }, [flyToLocation])
+
+  // Storm auto-tour: fly to each detected storm every 8 seconds
+  useEffect(() => {
+    clearInterval(tourTimerRef.current)
+    if (!tourActive || !gridData?.storms?.length) return
+
+    const flyToStorm = (idx) => {
+      const storm = gridData.storms[idx % gridData.storms.length]
+      if (!storm) return
+      flyTargetRef.current = latLonToVec3(storm.lat, storm.lon, 4.0)
+      if (controlsRef.current) controlsRef.current.enabled = false
+    }
+
+    flyToStorm(tourIdxRef.current)
+    tourTimerRef.current = setInterval(() => {
+      tourIdxRef.current = (tourIdxRef.current + 1) % gridData.storms.length
+      flyToStorm(tourIdxRef.current)
+    }, 8000)
+
+    return () => clearInterval(tourTimerRef.current)
+  }, [tourActive, gridData?.storms])
 
   useFrame(() => {
     if (!flyTargetRef.current) return
@@ -148,6 +168,12 @@ function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode
 }
 
 export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode, previewData, selectedCity }) {
+  const [tourActive, setTourActive] = useState(false)
+  const stormCount = gridData?.storms?.length ?? 0
+
+  // Stop tour if storms disappear
+  useEffect(() => { if (stormCount === 0) setTourActive(false) }, [stormCount])
+
   return (
     <>
       <style>{`
@@ -155,7 +181,33 @@ export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation,
           0%, 100% { opacity: 1; transform: scale(1); }
           50%       { opacity: 0.6; transform: scale(1.4); }
         }
+        @keyframes tourPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(168,85,247,0.5); }
+          50%       { box-shadow: 0 0 0 6px rgba(168,85,247,0); }
+        }
       `}</style>
+
+      {/* Storm tour toggle — only shown when storms exist */}
+      {stormCount > 0 && (
+        <button
+          onClick={() => setTourActive(a => !a)}
+          title={tourActive ? 'Stop storm tour' : `Auto-tour ${stormCount} active storm${stormCount > 1 ? 's' : ''}`}
+          style={{
+            position: 'absolute', bottom: 80, right: 12, zIndex: 28,
+            padding: '7px 12px', borderRadius: 10,
+            background: tourActive ? 'rgba(168,85,247,0.25)' : 'rgba(10,15,30,0.82)',
+            border: `1px solid ${tourActive ? '#a855f7' : 'rgba(255,255,255,0.1)'}`,
+            color: tourActive ? '#d8b4fe' : 'rgba(255,255,255,0.55)',
+            fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
+            backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+            animation: tourActive ? 'tourPulse 2s ease-in-out infinite' : 'none',
+            display: 'flex', alignItems: 'center', gap: 5,
+            boxShadow: '0 2px 16px rgba(0,0,0,0.5)',
+          }}>
+          🌀 {tourActive ? `Touring (${stormCount})` : `${stormCount} Storm${stormCount > 1 ? 's' : ''}`}
+        </button>
+      )}
+
       <Canvas
         camera={{ position: [0, 1.5, 4.5], fov: 50 }}
         style={{ background: '#030711' }}
@@ -169,6 +221,7 @@ export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation,
           overlayMode={overlayMode}
           previewData={previewData}
           selectedCity={selectedCity}
+          tourActive={tourActive}
         />
       </Canvas>
     </>

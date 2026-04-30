@@ -138,7 +138,10 @@ std::array<GridSim::Cell, GridSim::SIZE> GridSim::physicsStep(
             }
             H_new = std::max(0.0f, std::min(1.0f, H_new));
 
-            float newT = cur.T + dT_solar + dT_diff + dT_adv;
+            // Latent heat release: condensation warms surrounding air (real atmospheric physics)
+            float dT_latent = precip * 0.05f;
+
+            float newT = cur.T + dT_solar + dT_diff + dT_adv + dT_latent;
             newT = std::max(-80.0f, std::min(60.0f, newT));
 
             next[i].T = newT;

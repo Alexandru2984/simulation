@@ -75,9 +75,18 @@ export default function EarthGlobe({ temperature = 20, simTime = 0, onGlobeClick
     const mat = meshRef.current.material
     mat.uniforms.temperature.value = tempRef.current
 
-    const st = simTimeRef.current
-    const hourAngle = (st / 3600) * 2 * Math.PI
-    const decl = 23.5 * (Math.PI / 180) * Math.sin((st / (365 * 3600)) * 2 * Math.PI)
+    // Real-time sun position from UTC wall clock — shows actual day/night on Earth
+    const now = new Date()
+    const utcSec = now.getUTCHours() * 3600 + now.getUTCMinutes() * 60 + now.getUTCSeconds()
+    const startOfYear = Date.UTC(now.getUTCFullYear(), 0, 0)
+    const dayOfYear   = Math.floor((now.getTime() - startOfYear) / 86400000)
+
+    // Solar declination: ±23.44° over the year (peaks at solstices)
+    const decl = 23.44 * (Math.PI / 180) * Math.sin((2 * Math.PI * (284 + dayOfYear)) / 365)
+
+    // Hour angle: sun is over Greenwich (lon 0°) at UTC 12:00
+    const hourAngle = ((utcSec / 86400) - 0.5) * 2 * Math.PI
+
     mat.uniforms.sunDir.value.set(
       Math.cos(decl) * Math.cos(-hourAngle),
       Math.sin(decl),

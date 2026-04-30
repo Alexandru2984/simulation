@@ -126,3 +126,24 @@ void GridRestController::getHistory(
     cb(jsonResp(GridSim::instance().getHistory(limit)));
 }
 
+void GridRestController::getMetrics(
+    const drogon::HttpRequestPtr&,
+    std::function<void(const drogon::HttpResponsePtr&)>&& cb) const
+{
+    auto& sim = GridSim::instance();
+    std::size_t clients;
+    { std::lock_guard<std::mutex> lk(wsGridMtx); clients = wsGridClients.size(); }
+
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+        "{\"tick\":%lld,\"simTime\":%.1f,\"simSpeed\":%.1f,"
+        "\"rows\":%d,\"cols\":%d,\"gridCells\":%d,"
+        "\"wsClients\":%zu,\"version\":\"1.0\",\"status\":\"ok\"}",
+        (long long)sim.tick(),
+        (double)sim.simTime(),
+        (double)sim.speed(),
+        GridSim::ROWS, GridSim::COLS, GridSim::SIZE,
+        clients);
+    cb(jsonResp(buf));
+}
+
