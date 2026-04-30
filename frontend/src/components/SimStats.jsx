@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { useFPS } from '../hooks/useFPS'
+import { ArcGauge } from './ArcGauge'
 
-function sparkline(history, color, w = 60, h = 24) {
-  if (!history || history.length < 2) return null
+function Sparkline({ history, color, w = 56, h = 20 }) {
+  if (!history || history.length < 2) return <div style={{ height: h, width: w }} />
   const min = Math.min(...history), max = Math.max(...history)
   const range = max - min || 1
   const pts = history.map((v, i) => {
@@ -11,13 +12,15 @@ function sparkline(history, color, w = 60, h = 24) {
     return `${x},${y}`
   }).join(' ')
   return (
-    <svg width={w} height={h} style={{ display: 'block' }}>
+    <svg width={w} height={h} style={{ display: 'block', flexShrink: 0 }}>
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   )
 }
 
-export default function SimStats({ gridData, isMobile }) {
+const LABEL = { color: 'rgba(255,255,255,0.32)', fontSize: '0.58rem', textTransform: 'uppercase', letterSpacing: '0.06em' }
+
+export default function SimStats({ gridData, weatherData, isMobile }) {
   const [history, setHistory] = useState({ T: [], wind: [], storms: [] })
   const tickRef = useRef(-1)
   const fps = useFPS()
@@ -27,110 +30,90 @@ export default function SimStats({ gridData, isMobile }) {
     if (!gridData || gridData.tick === tickRef.current) return
     tickRef.current = gridData.tick
     setHistory(prev => ({
-      T:      [...prev.T.slice(-60),     gridData.avgT ?? 0],
+      T:      [...prev.T.slice(-60),      gridData.avgT ?? 0],
       wind:   [...prev.wind.slice(-60),   gridData.avgWind ?? 0],
-      storms: [...prev.storms.slice(-60), (gridData.storms?.length ?? 0)],
+      storms: [...prev.storms.slice(-60), gridData.storms?.length ?? 0],
     }))
   }, [gridData])
 
-  if (!gridData) return null
+  if (isMobile || !gridData) return null
 
-  const avgT    = gridData.avgT?.toFixed(1) ?? '—'
+  const avgT    = gridData.avgT?.toFixed(1)    ?? '—'
   const avgWind = gridData.avgWind?.toFixed(1) ?? '—'
   const nStorms = gridData.storms?.length ?? 0
-
-  const stat = {
-    display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
-    padding: '6px 10px', background: '#0f172a88', borderRadius: 10,
-    border: '1px solid #1e293b', minWidth: 80,
-  }
-  const label = { color: '#475569', fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.06em' }
-  const val   = { fontSize: '0.95rem', fontWeight: 700, lineHeight: 1.2 }
-
-  if (isMobile) return (
-    <div style={{ display: 'flex', gap: 6, padding: '0 12px 4px', overflowX: 'auto', scrollbarWidth: 'none' }}>
-      <div style={stat}>
-        <span style={label}>Avg T</span>
-        <span style={{ ...val, color: '#f97316' }}>{avgT}°C</span>
-      </div>
-      <div style={stat}>
-        <span style={label}>Avg Wind</span>
-        <span style={{ ...val, color: '#38bdf8' }}>{avgWind} m/s</span>
-      </div>
-      <div style={stat}>
-        <span style={label}>Storms</span>
-        <span style={{ ...val, color: nStorms > 0 ? '#a855f7' : '#475569' }}>
-          {nStorms > 0 ? `🌀 ${nStorms}` : '—'}
-        </span>
-      </div>
-      <div style={stat}>
-        <span style={label}>Tick</span>
-        <span style={{ ...val, color: '#64748b' }}>#{gridData.tick}</span>
-      </div>
-      <div style={stat}>
-        <span style={label}>FPS</span>
-        <span style={{ ...val, color: fpsColor }}>{fps}</span>
-      </div>
-    </div>
-  )
 
   return (
     <div style={{
       position: 'absolute', bottom: 24, left: 20, zIndex: 20,
-      background: '#0f172aee', border: '1px solid #1e293b', borderRadius: 16,
-      padding: '12px 14px', backdropFilter: 'blur(10px)',
-      boxShadow: '0 4px 24px #00000066',
-      display: 'flex', flexDirection: 'column', gap: 10,
-      minWidth: 150,
+      background: 'rgba(10,15,30,0.82)',
+      backdropFilter: 'blur(16px)',
+      WebkitBackdropFilter: 'blur(16px)',
+      border: '1px solid rgba(255,255,255,0.08)',
+      borderRadius: 16,
+      padding: '12px 14px',
+      width: 224,
+      boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
     }}>
-      <div style={{ color: '#475569', fontSize: '0.65rem', textTransform: 'uppercase',
-        letterSpacing: '0.1em', paddingBottom: 4, borderBottom: '1px solid #1e293b' }}>
-        📊 Simulation Stats
+      {/* Section header */}
+      <div style={{ color: 'rgba(255,255,255,0.28)', fontSize: '0.6rem', textTransform: 'uppercase',
+        letterSpacing: '0.1em', paddingBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.06)',
+        marginBottom: 10 }}>
+        📊 Sim Stats
       </div>
 
-      {/* Avg Temperature */}
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 }}>
-          <span style={label}>Global Avg Temp</span>
-          <span style={{ color: '#f97316', fontWeight: 700, fontSize: '0.9rem' }}>{avgT}°C</span>
+      {/* Arc gauges row */}
+      {weatherData && (
+        <div style={{ display: 'flex', gap: 0, marginBottom: 10, paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <ArcGauge value={weatherData.temperature} min={-20} max={50}   label="Temp"  unit="°C"  color="#f97316" size="sm" />
+          <ArcGauge value={weatherData.pressure}    min={980}  max={1040} label="Press" unit="hPa" color="#60a5fa" size="sm" />
+          <ArcGauge value={weatherData.wind_speed}  min={0}    max={30}   label="Wind"  unit="m/s" color="#34d399" size="sm" />
         </div>
-        {sparkline(history.T, '#f97316')}
-      </div>
+      )}
 
-      {/* Avg Wind */}
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 }}>
-          <span style={label}>Avg Wind Speed</span>
-          <span style={{ color: '#38bdf8', fontWeight: 700, fontSize: '0.9rem' }}>{avgWind} m/s</span>
+      {/* Sparkline rows */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div>
+            <div style={LABEL}>Avg Temp</div>
+            <div style={{ color: '#f97316', fontWeight: 700, fontSize: '0.85rem', lineHeight: 1.3 }}>{avgT}°C</div>
+          </div>
+          <Sparkline history={history.T} color="#f97316" />
         </div>
-        {sparkline(history.wind, '#38bdf8')}
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div>
+            <div style={LABEL}>Avg Wind</div>
+            <div style={{ color: '#38bdf8', fontWeight: 700, fontSize: '0.85rem', lineHeight: 1.3 }}>{avgWind} m/s</div>
+          </div>
+          <Sparkline history={history.wind} color="#38bdf8" />
+        </div>
+
+        {/* Storms + FPS */}
+        <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+          <div style={{
+            flex: 1, padding: '4px 8px',
+            background: nStorms > 0 ? 'rgba(168,85,247,0.1)' : 'rgba(255,255,255,0.03)',
+            border: `1px solid ${nStorms > 0 ? 'rgba(168,85,247,0.35)' : 'rgba(255,255,255,0.06)'}`,
+            borderRadius: 8,
+          }}>
+            <div style={LABEL}>Storms</div>
+            <div style={{ color: nStorms > 0 ? '#a855f7' : 'rgba(255,255,255,0.22)', fontWeight: 700, fontSize: '0.82rem' }}>
+              {nStorms > 0 ? `🌀 ${nStorms}` : '—'}
+            </div>
+          </div>
+          <div style={{
+            flex: 1, padding: '4px 8px',
+            background: 'rgba(255,255,255,0.03)',
+            border: `1px solid ${fpsColor}22`,
+            borderRadius: 8,
+          }}>
+            <div style={LABEL}>FPS</div>
+            <div style={{ color: fpsColor, fontWeight: 700, fontSize: '0.82rem' }}>{fps}</div>
+          </div>
+        </div>
       </div>
 
-      {/* Active storms */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '6px 8px', background: nStorms > 0 ? '#a855f711' : '#1e293b33',
-        border: `1px solid ${nStorms > 0 ? '#a855f744' : '#1e293b'}`, borderRadius: 8,
-      }}>
-        <span style={label}>Active Storms</span>
-        <span style={{ color: nStorms > 0 ? '#a855f7' : '#475569', fontWeight: 700, fontSize: '1rem' }}>
-          {nStorms > 0 ? `🌀 ${nStorms}` : '—'}
-        </span>
-      </div>
-
-      {/* FPS */}
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '6px 8px', background: '#1e293b33',
-        border: `1px solid ${fpsColor}33`, borderRadius: 8,
-      }}>
-        <span style={label}>Render FPS</span>
-        <span style={{ color: fpsColor, fontWeight: 700, fontSize: '0.9rem' }}>
-          {fps} fps
-        </span>
-      </div>
-
-      <div style={{ color: '#1e293b', fontSize: '0.6rem', textAlign: 'right' }}>
+      <div style={{ color: 'rgba(255,255,255,0.1)', fontSize: '0.57rem', textAlign: 'right', marginTop: 6 }}>
         tick #{gridData.tick}
       </div>
     </div>
