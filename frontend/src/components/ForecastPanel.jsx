@@ -24,9 +24,8 @@ function snapAvgT(snap) {
 }
 
 function SnapBox({ snap, isSelected, onClick }) {
-  const temp = snapAvgT(snap)
-  const t = temp ?? 15
-  // Map -10..40 → blue to orange
+  const temp  = snapAvgT(snap)
+  const t     = temp ?? 15
   const ratio = Math.max(0, Math.min(1, (t + 10) / 50))
   const r = Math.round(ratio * 255)
   const g = Math.round(120 - ratio * 40)
@@ -35,18 +34,19 @@ function SnapBox({ snap, isSelected, onClick }) {
   return (
     <button onClick={onClick} style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-      padding: '5px 6px', minWidth: 52, flexShrink: 0,
-      background: isSelected ? '#1d4ed833' : 'transparent',
-      border: `1px solid ${isSelected ? '#3b82f6' : '#1e293b'}`,
+      padding: '5px 6px', minWidth: 50, flexShrink: 0,
+      background: isSelected ? 'rgba(29,78,216,0.25)' : 'transparent',
+      border: `1px solid ${isSelected ? '#3b82f6' : 'rgba(255,255,255,0.07)'}`,
       borderRadius: 8, cursor: 'pointer',
+      transition: 'all 0.15s ease',
     }}>
       <div style={{
-        width: 26, height: 26, borderRadius: 5, background: color,
-        border: `2px solid ${isSelected ? '#3b82f6' : '#1e293b55'}`,
+        width: 24, height: 24, borderRadius: 5, background: color,
+        border: `2px solid ${isSelected ? '#3b82f6' : 'rgba(255,255,255,0.1)'}`,
       }} />
-      <div style={{ color: '#64748b', fontSize: '0.58rem' }}>s{snap.step}</div>
+      <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.55rem' }}>s{snap.step}</div>
       {temp !== null && (
-        <div style={{ color, fontSize: '0.6rem', fontWeight: 700, lineHeight: 1 }}>
+        <div style={{ color, fontSize: '0.58rem', fontWeight: 700, lineHeight: 1 }}>
           {temp.toFixed(1)}°
         </div>
       )}
@@ -54,16 +54,28 @@ function SnapBox({ snap, isSelected, onClick }) {
   )
 }
 
+const GLASS = {
+  background: 'rgba(10,15,30,0.82)',
+  backdropFilter: 'blur(16px)',
+  WebkitBackdropFilter: 'blur(16px)',
+  border: '1px solid rgba(255,255,255,0.08)',
+}
+
+const TABS = [
+  { id: 'forecast', icon: '🔮', label: 'Forecast' },
+  { id: 'history',  icon: '📼', label: 'History'  },
+]
+
 export default function ForecastPanel({ onPreviewSnap }) {
   const isMobile = useIsMobile()
-  const [expanded, setExpanded]           = useState(false)
-  const [tab, setTab]                     = useState('forecast')
-  const [forecastData, setForecastData]   = useState(null)
-  const [historyData, setHistoryData]     = useState(null)
-  const [loading, setLoading]             = useState(false)
+  const [expanded, setExpanded]                 = useState(false)
+  const [tab, setTab]                           = useState('forecast')
+  const [forecastData, setForecastData]         = useState(null)
+  const [historyData, setHistoryData]           = useState(null)
+  const [loading, setLoading]                   = useState(false)
   const [selectedForecast, setSelectedForecast] = useState(null)
-  const [historyIdx, setHistoryIdx]       = useState(0)
-  const [isPreview, setIsPreview]         = useState(false)
+  const [historyIdx, setHistoryIdx]             = useState(0)
+  const [isPreview, setIsPreview]               = useState(false)
 
   const goLive = useCallback(() => {
     setIsPreview(false)
@@ -74,7 +86,7 @@ export default function ForecastPanel({ onPreviewSnap }) {
   const loadForecast = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/grid/forecast', {
+      const res  = await fetch('/api/grid/forecast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ steps: 100 }),
@@ -91,7 +103,7 @@ export default function ForecastPanel({ onPreviewSnap }) {
   const loadHistory = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/grid/history?limit=30')
+      const res  = await fetch('/api/grid/history?limit=30')
       const data = await res.json()
       setHistoryData(Array.isArray(data) ? data : [])
       setHistoryIdx(0)
@@ -108,13 +120,10 @@ export default function ForecastPanel({ onPreviewSnap }) {
     onPreviewSnap(snap)
   }, [onPreviewSnap])
 
-  const handleHistorySlider = useCallback((e) => {
+  const handleHistorySlider = useCallback(e => {
     const idx = Number(e.target.value)
     setHistoryIdx(idx)
-    if (historyData?.[idx]) {
-      setIsPreview(true)
-      onPreviewSnap(historyData[idx])
-    }
+    if (historyData?.[idx]) { setIsPreview(true); onPreviewSnap(historyData[idx]) }
   }, [historyData, onPreviewSnap])
 
   const tempDelta = (() => {
@@ -125,80 +134,30 @@ export default function ForecastPanel({ onPreviewSnap }) {
     return tN - t0
   })()
 
-  const toggleBtn = (
-    <button
-      onClick={() => setExpanded(e => !e)}
-      title="Time Navigator"
-      style={{
-        width: 44, height: 44, borderRadius: 12,
-        background: expanded ? '#1d4ed8cc' : '#0f172aee',
-        border: `1px solid ${expanded ? '#3b82f6' : '#1e293b'}`,
-        color: '#e2e8f0', fontSize: '1.2rem', cursor: 'pointer',
-        backdropFilter: 'blur(10px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 2px 16px #00000055',
-      }}
-    >🔮</button>
-  )
-
-  const panelContent = (
-    <div style={{
-      background: '#0f172aee',
-      border: '1px solid #1e293b',
-      borderRadius: isMobile ? '16px 16px 0 0' : 16,
-      padding: '12px',
-      backdropFilter: 'blur(12px)',
-      boxShadow: '0 4px 24px #00000077',
-      width: isMobile ? '100%' : 280,
-      maxHeight: isMobile ? '52vh' : '62vh',
-      overflowY: 'auto',
-      display: 'flex', flexDirection: 'column', gap: 10,
-      boxSizing: 'border-box',
-    }}>
-      {/* Header row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ color: '#94a3b8', fontSize: '0.78rem', fontWeight: 600 }}>
-          📡 Time Navigator
-        </span>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {isPreview && (
-            <button onClick={goLive} style={{
-              padding: '3px 10px', borderRadius: 6, fontSize: '0.7rem',
-              background: '#22c55e22', border: '1px solid #22c55e',
-              color: '#22c55e', cursor: 'pointer',
-            }}>▶ Live</button>
-          )}
-          {isMobile && (
-            <button onClick={() => setExpanded(false)} style={{
-              padding: '3px 8px', borderRadius: 6, fontSize: '0.7rem',
-              background: 'transparent', border: '1px solid #334155',
-              color: '#64748b', cursor: 'pointer',
-            }}>✕</button>
-          )}
-        </div>
-      </div>
-
+  // Shared panel body (tab content only, no header)
+  const tabContent = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 6, borderBottom: '1px solid #1e293b', paddingBottom: 8 }}>
-        {[['forecast', '🔮 Forecast'], ['history', '📼 History']].map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id)} style={{
-            flex: 1, padding: '5px 0', borderRadius: 6, fontSize: '0.74rem',
-            background: tab === id ? '#1d4ed833' : 'transparent',
-            border: `1px solid ${tab === id ? '#3b82f6' : '#1e293b'}`,
-            color: tab === id ? '#60a5fa' : '#475569',
-            cursor: 'pointer',
-          }}>{label}</button>
+      <div style={{ display: 'flex', gap: 6, borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: 8 }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            flex: 1, padding: '5px 0', borderRadius: 8, fontSize: '0.74rem',
+            background: tab === t.id ? 'rgba(29,78,216,0.22)' : 'transparent',
+            border: `1px solid ${tab === t.id ? '#3b82f666' : 'rgba(255,255,255,0.07)'}`,
+            color: tab === t.id ? '#60a5fa' : 'rgba(255,255,255,0.38)',
+            cursor: 'pointer', transition: 'all 0.15s',
+          }}>{t.icon} {t.label}</button>
         ))}
       </div>
 
-      {/* ── Forecast tab ── */}
+      {/* Forecast tab */}
       {tab === 'forecast' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <button onClick={loadForecast} disabled={loading} style={{
             padding: '7px 0', borderRadius: 8, fontSize: '0.76rem',
-            background: '#7c3aed22', border: '1px solid #7c3aed',
+            background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.5)',
             color: '#a855f7', cursor: loading ? 'wait' : 'pointer',
-            opacity: loading ? 0.7 : 1,
+            opacity: loading ? 0.7 : 1, transition: 'all 0.15s',
           }}>
             {loading ? '⟳ Running forecast…' : '🔮 Run Forecast (100 steps)'}
           </button>
@@ -208,10 +167,9 @@ export default function ForecastPanel({ onPreviewSnap }) {
               {tempDelta !== null && (
                 <div style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  padding: '5px 9px', background: '#1e293b', borderRadius: 8,
-                  fontSize: '0.72rem',
+                  padding: '5px 9px', background: 'rgba(255,255,255,0.04)', borderRadius: 8, fontSize: '0.72rem',
                 }}>
-                  <span style={{ color: '#475569' }}>Δ Avg T (0→end)</span>
+                  <span style={{ color: 'rgba(255,255,255,0.35)' }}>Δ Avg T (0→end)</span>
                   <span style={{
                     color: tempDelta > 0.05 ? '#f97316' : tempDelta < -0.05 ? '#60a5fa' : '#94a3b8',
                     fontWeight: 700,
@@ -223,65 +181,54 @@ export default function ForecastPanel({ onPreviewSnap }) {
               )}
               <div style={{
                 display: 'flex', gap: 4, overflowX: 'auto', paddingBottom: 4,
-                scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent',
+                scrollbarWidth: 'thin', scrollbarColor: 'rgba(255,255,255,0.1) transparent',
               }}>
                 {forecastData.map((snap, i) => (
-                  <SnapBox
-                    key={i}
-                    snap={snap}
-                    isSelected={selectedForecast === i}
-                    onClick={() => handleForecastSelect(snap, i)}
-                  />
+                  <SnapBox key={i} snap={snap} isSelected={selectedForecast === i}
+                    onClick={() => handleForecastSelect(snap, i)} />
                 ))}
               </div>
-              <div style={{ color: '#334155', fontSize: '0.61rem', textAlign: 'center' }}>
+              <div style={{ color: 'rgba(255,255,255,0.2)', fontSize: '0.6rem', textAlign: 'center' }}>
                 Click a snapshot to preview on globe
               </div>
             </>
           )}
 
           {forecastData && forecastData.length === 0 && !loading && (
-            <div style={{ color: '#ef4444', fontSize: '0.72rem', textAlign: 'center' }}>
-              Failed to load forecast data
-            </div>
+            <div style={{ color: '#ef4444', fontSize: '0.72rem', textAlign: 'center' }}>Failed to load forecast data</div>
           )}
         </div>
       )}
 
-      {/* ── History tab ── */}
+      {/* History tab */}
       {tab === 'history' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <button onClick={loadHistory} disabled={loading} style={{
             padding: '7px 0', borderRadius: 8, fontSize: '0.76rem',
-            background: '#7c3aed22', border: '1px solid #7c3aed',
+            background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.5)',
             color: '#a855f7', cursor: loading ? 'wait' : 'pointer',
-            opacity: loading ? 0.7 : 1,
+            opacity: loading ? 0.7 : 1, transition: 'all 0.15s',
           }}>
             {loading ? '⟳ Loading history…' : '📼 Load History (30 snaps)'}
           </button>
 
           {historyData && historyData.length > 0 && (
             <>
-              <div style={{ color: '#475569', fontSize: '0.68rem', textAlign: 'center' }}>
-                {historyData.length} snapshots available — drag to replay
+              <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.68rem', textAlign: 'center' }}>
+                {historyData.length} snapshots — drag to replay
               </div>
-              <input
-                type="range"
-                min={0}
-                max={historyData.length - 1}
-                value={historyIdx}
+              <input type="range" min={0} max={historyData.length - 1} value={historyIdx}
                 onChange={handleHistorySlider}
-                style={{ width: '100%', accentColor: '#3b82f6', cursor: 'pointer' }}
-              />
+                style={{ width: '100%', accentColor: '#3b82f6', cursor: 'pointer' }} />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                <div style={{ padding: '5px 9px', background: '#1e293b', borderRadius: 8 }}>
-                  <div style={{ color: '#475569', fontSize: '0.59rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Sim Time</div>
+                <div style={{ padding: '5px 9px', background: 'rgba(255,255,255,0.04)', borderRadius: 8 }}>
+                  <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.59rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Sim Time</div>
                   <div style={{ color: '#38bdf8', fontWeight: 700, fontSize: '0.85rem' }}>
                     {formatSimTime(historyData[historyIdx]?.simTime)}
                   </div>
                 </div>
-                <div style={{ padding: '5px 9px', background: '#1e293b', borderRadius: 8 }}>
-                  <div style={{ color: '#475569', fontSize: '0.59rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Step</div>
+                <div style={{ padding: '5px 9px', background: 'rgba(255,255,255,0.04)', borderRadius: 8 }}>
+                  <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.59rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Step</div>
                   <div style={{ color: '#94a3b8', fontWeight: 700, fontSize: '0.85rem' }}>
                     #{historyData[historyIdx]?.step ?? '—'}
                   </div>
@@ -291,59 +238,136 @@ export default function ForecastPanel({ onPreviewSnap }) {
           )}
 
           {historyData && historyData.length === 0 && !loading && (
-            <div style={{ color: '#64748b', fontSize: '0.72rem', textAlign: 'center' }}>
-              No history available yet
-            </div>
+            <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.72rem', textAlign: 'center' }}>No history available yet</div>
           )}
         </div>
       )}
     </div>
   )
 
-  // ── Mobile layout: floating button + bottom sheet ──────────────────────────
+  // ── Mobile: floating button + bottom sheet ────────────────────────────────
   if (isMobile) {
     return (
       <>
         {!expanded && (
-          <button
-            onClick={() => setExpanded(true)}
-            title="Time Navigator"
-            style={{
-              position: 'fixed', bottom: 230, right: 12, zIndex: 25,
-              width: 44, height: 44, borderRadius: 12,
-              background: isPreview ? '#1d4ed8cc' : '#0f172aee',
-              border: `1px solid ${isPreview ? '#3b82f6' : '#1e293b'}`,
-              color: '#e2e8f0', fontSize: '1.2rem', cursor: 'pointer',
-              backdropFilter: 'blur(10px)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 2px 16px #00000055',
-            }}
-          >🔮</button>
+          <button onClick={() => setExpanded(true)} title="Time Navigator" style={{
+            position: 'fixed', bottom: 124, right: 12, zIndex: 28,
+            width: 44, height: 44, borderRadius: 12,
+            ...GLASS,
+            background: isPreview ? 'rgba(29,78,216,0.3)' : 'rgba(10,15,30,0.82)',
+            border: `1px solid ${isPreview ? '#3b82f6' : 'rgba(255,255,255,0.08)'}`,
+            color: '#e2e8f0', fontSize: '1.2rem', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 2px 16px rgba(0,0,0,0.5)',
+          }}>🔮</button>
         )}
         {expanded && (
-          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 35 }}>
-            {panelContent}
+          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 38 }}>
+            <div style={{
+              ...GLASS,
+              borderRadius: '16px 16px 0 0',
+              borderBottom: 'none', borderLeft: 'none', borderRight: 'none',
+              padding: '14px 14px 24px',
+              maxHeight: '55vh', overflowY: 'auto',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '0.78rem', fontWeight: 600 }}>📡 Time Navigator</span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {isPreview && (
+                    <button onClick={goLive} style={{
+                      padding: '3px 10px', borderRadius: 6, fontSize: '0.7rem',
+                      background: 'rgba(34,197,94,0.15)', border: '1px solid #22c55e',
+                      color: '#22c55e', cursor: 'pointer',
+                    }}>▶ Live</button>
+                  )}
+                  <button onClick={() => setExpanded(false)} style={{
+                    padding: '3px 8px', borderRadius: 6, fontSize: '0.7rem',
+                    background: 'transparent', border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'rgba(255,255,255,0.4)', cursor: 'pointer',
+                  }}>✕</button>
+                </div>
+              </div>
+              {tabContent}
+            </div>
           </div>
         )}
       </>
     )
   }
 
-  // ── Desktop layout: right side panel ──────────────────────────────────────
+  // ── Desktop: right-side sliding panel with vertical tab strip ─────────────
   return (
     <div style={{
-      position: 'absolute', right: 20, bottom: 140, zIndex: 20,
-      display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end',
+      position: 'absolute', right: 0,
+      top: 56, bottom: 20,
+      zIndex: 20,
+      display: 'flex', alignItems: 'center',
     }}>
-      {toggleBtn}
-      {isPreview && !expanded && (
-        <button onClick={goLive} style={{
-          padding: '3px 12px', borderRadius: 8, fontSize: '0.7rem',
-          background: '#22c55e22', border: '1px solid #22c55e',
-          color: '#22c55e', cursor: 'pointer',
-        }}>▶ Live</button>
+      {/* Expanded panel */}
+      {expanded && (
+        <div style={{
+          ...GLASS,
+          borderRadius: '16px 0 0 16px',
+          borderRight: 'none',
+          width: 268,
+          maxHeight: 'calc(100% - 20px)',
+          overflowY: 'auto',
+          padding: '14px',
+          display: 'flex', flexDirection: 'column', gap: 10,
+          boxShadow: '-8px 0 32px rgba(0,0,0,0.4)',
+          scrollbarWidth: 'thin',
+          scrollbarColor: 'rgba(255,255,255,0.1) transparent',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.78rem', fontWeight: 600 }}>📡 Time Navigator</span>
+            {isPreview && (
+              <button onClick={goLive} style={{
+                padding: '3px 10px', borderRadius: 6, fontSize: '0.7rem',
+                background: 'rgba(34,197,94,0.15)', border: '1px solid #22c55e',
+                color: '#22c55e', cursor: 'pointer',
+              }}>▶ Live</button>
+            )}
+          </div>
+          {tabContent}
+        </div>
       )}
-      {expanded && panelContent}
+
+      {/* Vertical tab strip — always visible on right edge */}
+      <div style={{
+        ...GLASS,
+        borderRadius: expanded ? '0 0 0 0' : '16px 0 0 16px',
+        borderRight: 'none',
+        borderLeft: expanded ? 'none' : '1px solid rgba(255,255,255,0.08)',
+        padding: '10px 4px',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        gap: 4, justifyContent: 'center',
+        boxShadow: expanded ? 'none' : '-4px 0 16px rgba(0,0,0,0.3)',
+      }}>
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => {
+              if (tab === t.id) setExpanded(e => !e)
+              else { setTab(t.id); setExpanded(true) }
+            }}
+            style={{
+              writingMode: 'vertical-rl',
+              textOrientation: 'mixed',
+              transform: 'rotate(180deg)',
+              padding: '14px 7px',
+              background: tab === t.id && expanded ? 'rgba(59,130,246,0.15)' : 'transparent',
+              border: `1px solid ${tab === t.id && expanded ? 'rgba(59,130,246,0.4)' : 'transparent'}`,
+              borderRadius: 8,
+              color: tab === t.id && expanded ? '#60a5fa' : 'rgba(255,255,255,0.38)',
+              cursor: 'pointer', fontSize: '0.7rem', fontWeight: 600,
+              letterSpacing: '0.04em', whiteSpace: 'nowrap',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

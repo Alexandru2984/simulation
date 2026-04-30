@@ -38,14 +38,15 @@ export default function WeatherPopup({ lat, lon, onClose }) {
     top: '50%', left: '50%',
     transform: 'translate(-50%, -50%)',
     zIndex: 50,
-    background: '#0d1b2aee',
-    border: '1px solid #1e3a5f',
+    background: 'rgba(10,15,30,0.88)',
+    border: '1px solid rgba(255,255,255,0.1)',
     borderRadius: 20,
     padding: '20px 24px',
     minWidth: 260,
     maxWidth: 340,
     backdropFilter: 'blur(16px)',
-    boxShadow: '0 8px 40px #00000099',
+    WebkitBackdropFilter: 'blur(16px)',
+    boxShadow: '0 8px 40px rgba(0,0,0,0.7)',
     color: '#e2e8f0',
   }
 

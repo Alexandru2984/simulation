@@ -62,10 +62,9 @@ export default function SearchBar({ onSelect, isMobile }) {
   const pill = {
     position: 'relative',
     display: 'flex', alignItems: 'center', gap: 6,
-    background: '#0f172aee', border: '1px solid #1e293b',
-    borderRadius: 12, padding: '6px 12px',
-    backdropFilter: 'blur(10px)',
-    boxShadow: '0 2px 16px #00000044',
+    background: 'rgba(255,255,255,0.06)',
+    border: '1px solid rgba(255,255,255,0.1)',
+    borderRadius: 999, padding: '6px 12px',
   }
 
   return (
@@ -97,19 +96,23 @@ export default function SearchBar({ onSelect, isMobile }) {
       {open && results.length > 0 && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
-          zIndex: 100, background: '#0f172a', border: '1px solid #1e293b',
+          zIndex: 100,
+          background: 'rgba(10,15,30,0.95)',
+          border: '1px solid rgba(255,255,255,0.1)',
           borderRadius: 12, overflow: 'hidden',
-          boxShadow: '0 8px 32px #000000aa',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
         }}>
           {results.map((r, i) => (
             <button key={i} onClick={() => handleSelect(r)} style={{
               display: 'block', width: '100%', textAlign: 'left',
               background: 'transparent', border: 'none',
-              borderBottom: i < results.length - 1 ? '1px solid #1e293b' : 'none',
+              borderBottom: i < results.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
               padding: '9px 14px', cursor: 'pointer', color: '#e2e8f0',
               fontSize: '0.82rem', transition: 'background 0.15s',
             }}
-              onMouseEnter={e => e.currentTarget.style.background = '#1e293b'}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
               <span style={{ fontWeight: 600 }}>{r.name}</span>

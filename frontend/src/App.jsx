@@ -144,7 +144,7 @@ export default function App() {
             placementMode={placementMode}
             isMobile={false}
           />
-          <SimStats gridData={gridData} isMobile={false} />
+          <SimStats gridData={gridData} weatherData={data} isMobile={false} />
         </>
       )}
 
