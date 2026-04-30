@@ -60,8 +60,15 @@ export default function App() {
 
   const handleSeed = useCallback(async (lat, lon) => {
     setFlyToLocation({ lat, lon })
-    try { await fetch(`/api/weather/seed?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}`) } catch (_) {}
+    try {
+      await fetch('/api/weather/seed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat, lon }),
+      })
+    } catch (_) {}
   }, [])
+
 
   // Globe click: either place an event OR fly-to + popup
   const handleGlobeClick = useCallback(async (lat, lon) => {
@@ -90,7 +97,11 @@ export default function App() {
   }, [handleSeed])
 
   const handleSpeedChange = useCallback((value) => {
-    fetch(`/api/weather/speed?value=${value}`).catch(() => {})
+    fetch('/api/weather/speed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value }),
+    }).catch(() => {})
   }, [])
 
   const cursorStyle = placementMode ? 'crosshair' : 'default'

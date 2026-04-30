@@ -6,6 +6,8 @@
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+static const std::string ALLOWED_ORIGIN = "https://simulation.micutu.com";
+
 static Json::Value stateToJson(const WeatherState& s) {
     Json::Value v;
     v["temperature"]    = std::round(s.temperature    * 100.0) / 100.0;
@@ -24,7 +26,7 @@ void WeatherRestController::getWeather(
 {
     auto s = WeatherSim::instance().current();
     auto resp = drogon::HttpResponse::newHttpJsonResponse(stateToJson(s));
-    resp->addHeader("Access-Control-Allow-Origin", "*");
+    resp->addHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
     resp->addHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
     cb(resp);
 }
@@ -38,11 +40,15 @@ void WeatherWsController::handleNewConnection(
     const drogon::HttpRequestPtr& req,
     const drogon::WebSocketConnectionPtr& conn)
 {
+    auto origin = req->getHeader("Origin");
+    if (!origin.empty() && origin != ALLOWED_ORIGIN) {
+        conn->shutdown(drogon::CloseCode::kViolation, "forbidden origin");
+        return;
+    }
     {
         std::lock_guard<std::mutex> lk(ws_mtx);
         ws_clients.insert(conn);
     }
-    // Send current state immediately
     auto s = WeatherSim::instance().current();
     Json::FastWriter fw;
     conn->send(fw.write(stateToJson(s)));

@@ -29,9 +29,11 @@ static const int N_PRESETS = sizeof(PRESETS) / sizeof(PRESETS[0]);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+static const std::string ALLOWED_ORIGIN = "https://simulation.micutu.com";
+
 static void corsHeaders(const drogon::HttpResponsePtr& r) {
-    r->addHeader("Access-Control-Allow-Origin",  "*");
-    r->addHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    r->addHeader("Access-Control-Allow-Origin",  ALLOWED_ORIGIN);
+    r->addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
 }
 
 static const CityPreset* nearestPreset(double lat, double lon) {
@@ -65,13 +67,26 @@ void SeedController::seedWeather(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& cb)
 {
+    if (req->method() == drogon::Options) {
+        auto r = drogon::HttpResponse::newHttpResponse();
+        corsHeaders(r);
+        cb(r);
+        return;
+    }
+
     double lat = 44.43, lon = 26.10;
-    try {
-        auto lats = req->getParameter("lat");
-        auto lons = req->getParameter("lon");
-        if (!lats.empty()) lat = std::stod(lats);
-        if (!lons.empty()) lon = std::stod(lons);
-    } catch (...) {}
+    auto j = req->jsonObject();
+    if (j) {
+        if ((*j).isMember("lat") && (*j)["lat"].isNumeric()) lat = (*j)["lat"].asDouble();
+        if ((*j).isMember("lon") && (*j)["lon"].isNumeric()) lon = (*j)["lon"].asDouble();
+    }
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        auto r = drogon::HttpResponse::newHttpJsonResponse(Json::Value());
+        r->setStatusCode(drogon::k400BadRequest);
+        corsHeaders(r);
+        cb(r);
+        return;
+    }
 
     const char* apiKey = std::getenv("OPENWEATHER_API_KEY");
 
@@ -169,11 +184,19 @@ void SeedController::setSpeed(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& cb)
 {
+    if (req->method() == drogon::Options) {
+        auto r = drogon::HttpResponse::newHttpResponse();
+        corsHeaders(r);
+        cb(r);
+        return;
+    }
+
     double value = 1.0;
-    try {
-        auto vs = req->getParameter("value");
-        if (!vs.empty()) value = std::stod(vs);
-    } catch (...) {}
+    auto j = req->jsonObject();
+    if (j && (*j).isMember("value") && (*j)["value"].isNumeric()) {
+        value = (*j)["value"].asDouble();
+    }
+    value = std::max(0.1, std::min(100.0, value));
 
     WeatherSim::instance().setSpeed(value);
 

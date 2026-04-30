@@ -7,12 +7,14 @@
 static std::mutex                                    wsGridMtx;
 static std::set<drogon::WebSocketConnectionPtr>      wsGridClients;
 
+static const std::string ALLOWED_ORIGIN = "https://simulation.micutu.com";
+
 static drogon::HttpResponsePtr jsonResp(const std::string& body,
                                         drogon::HttpStatusCode code = drogon::k200OK) {
     auto r = drogon::HttpResponse::newHttpResponse();
     r->setStatusCode(code);
     r->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-    r->addHeader("Access-Control-Allow-Origin", "*");
+    r->addHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
     r->addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     r->addHeader("Access-Control-Allow-Headers", "Content-Type");
     r->setBody(body);
@@ -35,10 +37,18 @@ void GridRestController::inject(
     auto j = req->jsonObject();
     if (!j) { cb(jsonResp("{\"error\":\"invalid json\"}", drogon::k400BadRequest)); return; }
 
+    if (!(*j).isMember("lat") || !(*j).isMember("lon") || !(*j).isMember("type")) {
+        cb(jsonResp("{\"error\":\"missing required fields: lat, lon, type\"}", drogon::k400BadRequest)); return;
+    }
+    if (!(*j)["lat"].isNumeric() || !(*j)["lon"].isNumeric() || !(*j)["type"].isString()) {
+        cb(jsonResp("{\"error\":\"type mismatch\"}", drogon::k400BadRequest)); return;
+    }
+
     float lat = (*j)["lat"].asFloat();
     float lon = (*j)["lon"].asFloat();
     std::string typeStr = (*j)["type"].asString();
-    float intensity = (*j).get("intensity", 1.0f).asFloat();
+    float intensity = ((*j).isMember("intensity") && (*j)["intensity"].isNumeric())
+                      ? (*j)["intensity"].asFloat() : 1.0f;
 
     if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
         cb(jsonResp("{\"error\":\"bad coordinates\"}", drogon::k400BadRequest)); return;
@@ -56,9 +66,14 @@ void GridRestController::inject(
 }
 
 void GridWsController::handleNewConnection(
-    const drogon::HttpRequestPtr&,
+    const drogon::HttpRequestPtr& req,
     const drogon::WebSocketConnectionPtr& conn)
 {
+    auto origin = req->getHeader("Origin");
+    if (!origin.empty() && origin != ALLOWED_ORIGIN) {
+        conn->shutdown(drogon::CloseCode::kViolation, "forbidden origin");
+        return;
+    }
     std::lock_guard<std::mutex> lk(wsGridMtx);
     wsGridClients.insert(conn);
     conn->send(GridSim::instance().getStateJson());
