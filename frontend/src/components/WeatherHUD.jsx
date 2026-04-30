@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import SearchBar from './SearchBar'
+import EventPanel from './EventPanel'
+import SimStats from './SimStats'
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW']
@@ -85,8 +87,9 @@ function StatPill({ icon, value, unit, label, color }) {
 }
 
 // ── main component ───────────────────────────────────────────────────────────
-export default function WeatherHUD({ weatherData: wd, status, onSeed, onSpeedChange, onSearchSelect, locations, overlayMode, onOverlayMode }) {
-  const isMobile = useIsMobile()
+export default function WeatherHUD({ weatherData: wd, status, onSeed, onSpeedChange, onSearchSelect, locations, overlayMode, onOverlayMode, isMobile: isMobileProp, gridData, onStartPlacement, placementMode }) {
+  const isMobileDetected = useIsMobile()
+  const isMobile = isMobileProp ?? isMobileDetected
   const [speed, setSpeed]     = useState(1)
   const [seeding, setSeeding] = useState(false)
   const [activeCity, setActiveCity] = useState(null)
@@ -199,9 +202,15 @@ export default function WeatherHUD({ weatherData: wd, status, onSeed, onSpeedCha
           {activeCity && !seeding && <span style={{ color: '#475569', fontSize: '0.7rem' }}>📍 {activeCity}</span>}
         </div>
         {/* Overlay mode row */}
-        <div style={{ padding: '0 12px 6px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+        <div style={{ padding: '0 12px 4px', overflowX: 'auto', scrollbarWidth: 'none' }}>
           <ModeBar overlayMode={overlayMode} onOverlayMode={onOverlayMode} isMobile />
         </div>
+        {/* Event injection row (mobile) */}
+        {onStartPlacement && (
+          <EventPanel onStartPlacement={onStartPlacement} placementMode={placementMode} isMobile />
+        )}
+        {/* Sim stats row (mobile) */}
+        {gridData && <SimStats gridData={gridData} isMobile />}
       </div>
     </>
   )

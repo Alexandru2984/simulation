@@ -21,11 +21,13 @@ public:
         float R = 0;   // precipitation mm/h
     };
 
-    // Pending nudge accumulated from data assimilation
     struct Nudge {
         float T = 0, P = 0, U = 0, V = 0, H = 0;
-        float weight = 0;  // total Gaussian weight applied
+        float weight = 0;
     };
+
+    // Event types for direct injection
+    enum class EventType { CYCLONE, HEAT_DOME, COLD_OUTBREAK, BLOCKING_HIGH };
 
     static GridSim& instance();
 
@@ -38,11 +40,12 @@ public:
     std::array<Cell, SIZE> getGrid() const;
     long long tick() const { return tick_.load(); }
 
-    // Data assimilation: nudge the grid toward an observation at (lat, lon).
-    // Uses a Gaussian stencil (radius 2 cells) so no sharp discontinuities.
-    // Thread-safe — can be called from any thread.
+    // Soft assimilation (OWM data) — Gaussian stencil, gradual drain
     void assimilate(float lat, float lon,
                     float T, float P, float U, float V, float H);
+
+    // Hard injection (user events) — directly modifies grid for immediate visual effect
+    void inject(float lat, float lon, EventType type, float intensity = 1.0f);
 
     float cellLat(int r) const { return -85.0f + r * 10.0f; }
     float cellLon(int c) const { return -175.0f + c * 10.0f; }
@@ -57,10 +60,10 @@ private:
     void loop();
     void step(float dt);
     void initGrid();
-    void drainNudges();   // apply pending nudges smoothly into the grid
+    void drainNudges();
 
     std::array<Cell, SIZE>  grid_;
-    std::array<Nudge, SIZE> nudge_;  // accumulated observations waiting to be drained
+    std::array<Nudge, SIZE> nudge_;
     mutable std::mutex      mutex_;
 
     std::thread            thread_;
@@ -69,5 +72,9 @@ private:
     std::atomic<long long> tick_{0};
 
     float simTime_{0.0f};
+
+    // Zonal mean pressure per row (updated each step, used for storm detection)
+    std::array<float, ROWS> zonalMeanP_{};
 };
+
 

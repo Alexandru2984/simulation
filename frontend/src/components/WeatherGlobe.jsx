@@ -9,9 +9,8 @@ import Atmosphere from './Atmosphere'
 import RainParticles from './RainParticles'
 import GridOverlay from './GridOverlay'
 import WindField from './WindField'
+import StormLabels from './StormLabels'
 
-// lat/lon → 3D camera position matching Three.js SphereGeometry UV mapping
-// (lon=0° → +X axis, lon=90°E → -Z axis)
 function latLonToVec3(lat, lon, r = 4.5) {
   const latRad = (lat * Math.PI) / 180
   const lonRad = ((lon + 180) * Math.PI) / 180
@@ -59,7 +58,8 @@ function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode
         <CloudLayer windDirection={wDir} windSpeed={wSpeed} />
       </Suspense>
 
-      <WindParticles windDirection={wDir} windSpeed={wSpeed} />
+      {/* Wind particles driven by grid data */}
+      <WindParticles gridData={gridData} />
       <RainParticles pressure={pressure} active={isRain} />
       <Atmosphere temperature={temp} />
 
@@ -68,6 +68,11 @@ function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode
       )}
       {overlayMode === 'wind' && (
         <WindField gridData={gridData} />
+      )}
+
+      {/* Storm labels on globe */}
+      {gridData?.storms?.length > 0 && (
+        <StormLabels storms={gridData.storms} />
       )}
 
       <OrbitControls
@@ -101,3 +106,4 @@ export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation,
     </Canvas>
   )
 }
+

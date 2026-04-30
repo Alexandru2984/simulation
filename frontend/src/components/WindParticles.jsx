@@ -1,95 +1,132 @@
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+import { sampleGrid, latLonToVec3, vec3ToLatLon, GLOBE_RADIUS } from '../utils/geoUtils'
 
-const N = 30000
-const R = 2.018  // just above globe surface
+const N = 20000        // particle count (reduced from 30k for mobile perf)
+const R = GLOBE_RADIUS + 0.018
+const MAX_AGE = 8      // seconds before respawn
+const SPEED_SCALE = 0.00018  // m/s → degrees/frame scale
 
-export default function WindParticles({ windDirection = 0, windSpeed = 3 }) {
+// Random lat/lon with area-correct distribution (cos(lat) weighting)
+function randLatLon() {
+  const lat = Math.asin(Math.random() * 2 - 1) * 180 / Math.PI
+  const lon = Math.random() * 360 - 180
+  return { lat, lon }
+}
+
+export default function WindParticles({ gridData }) {
   const pointsRef = useRef()
-  // Store lat/lon for each particle
-  const latLon = useRef(new Float32Array(N * 2))
-  const ages   = useRef(new Float32Array(N))
 
-  const { positions, colors } = useMemo(() => {
-    const pos = new Float32Array(N * 3)
-    const col = new Float32Array(N * 3)
+  // Per-particle state stored in typed arrays
+  const state = useMemo(() => {
+    const lats = new Float32Array(N)
+    const lons = new Float32Array(N)
+    const ages = new Float32Array(N)
+    const lifetimes = new Float32Array(N)
     for (let i = 0; i < N; i++) {
-      const lat = (Math.random() - 0.5) * Math.PI
-      const lon = Math.random() * Math.PI * 2
-      latLon.current[i * 2]     = lat
-      latLon.current[i * 2 + 1] = lon
-      ages.current[i] = Math.random() * 5
-
-      pos[i * 3]     = R * Math.cos(lat) * Math.sin(lon)
-      pos[i * 3 + 1] = R * Math.sin(lat)
-      pos[i * 3 + 2] = R * Math.cos(lat) * Math.cos(lon)
-
-      // Blue-cyan-white gradient
-      const t = Math.random()
-      col[i * 3]     = 0.2 + t * 0.8
-      col[i * 3 + 1] = 0.6 + t * 0.4
-      col[i * 3 + 2] = 1.0
+      const { lat, lon } = randLatLon()
+      lats[i] = lat; lons[i] = lon
+      ages[i] = Math.random() * MAX_AGE
+      lifetimes[i] = MAX_AGE * (0.5 + Math.random() * 0.5)
     }
-    return { positions: pos, colors: col }
+    return { lats, lons, ages, lifetimes }
   }, [])
+
+  const buffers = useMemo(() => ({
+    positions: new Float32Array(N * 3),
+    colors:    new Float32Array(N * 3),
+  }), [])
+
+  // Latest grid data in a ref to avoid closure staleness
+  const gridRef = useRef(null)
+  useEffect(() => { gridRef.current = gridData }, [gridData])
 
   useFrame((_, delta) => {
     if (!pointsRef.current) return
-    const dir = (windDirection * Math.PI) / 180
-    const spd = Math.max(0.2, windSpeed) * 0.00015 * delta * 60
+    const g = gridRef.current
+    const { lats, lons, ages, lifetimes } = state
+    const { positions, colors } = buffers
 
-    const posAttr = pointsRef.current.geometry.attributes.position
-    const ll = latLon.current
-    const ag = ages.current
-
-    const dLon = Math.cos(dir) * spd
-    const dLat = Math.sin(dir) * spd * 0.4
-
+    // Local east/north tangent vectors (reusable)
     for (let i = 0; i < N; i++) {
-      ag[i] += delta
+      ages[i] += delta
 
-      ll[i * 2]     += dLat
-      ll[i * 2 + 1] += dLon
-
-      // Wrap
-      if (ll[i * 2] >  Math.PI / 2) ll[i * 2] = -Math.PI / 2 + 0.01
-      if (ll[i * 2] < -Math.PI / 2) ll[i * 2] =  Math.PI / 2 - 0.01
-      if (ll[i * 2 + 1] > Math.PI * 2) ll[i * 2 + 1] -= Math.PI * 2
-      if (ll[i * 2 + 1] < 0)           ll[i * 2 + 1] += Math.PI * 2
-
-      // Respawn randomly
-      if (ag[i] > 3.5 + Math.random() * 3) {
-        ll[i * 2]     = (Math.random() - 0.5) * Math.PI
-        ll[i * 2 + 1] = Math.random() * Math.PI * 2
-        ag[i] = 0
+      // Respawn old particles
+      if (ages[i] > lifetimes[i]) {
+        const { lat, lon } = randLatLon()
+        lats[i] = lat; lons[i] = lon
+        ages[i] = 0
+        lifetimes[i] = MAX_AGE * (0.5 + Math.random() * 0.5)
       }
 
-      const lat = ll[i * 2]
-      const lon = ll[i * 2 + 1]
-      const cosLat = Math.cos(lat)
-      posAttr.array[i * 3]     = R * cosLat * Math.sin(lon)
-      posAttr.array[i * 3 + 1] = R * Math.sin(lat)
-      posAttr.array[i * 3 + 2] = R * cosLat * Math.cos(lon)
+      let lat = lats[i], lon = lons[i]
+
+      // Sample U/V from grid (bilinear), or use gentle default when no data
+      let U = 0, V = 0
+      if (g?.U && g?.V) {
+        U = sampleGrid(lat, lon, g.U)
+        V = sampleGrid(lat, lon, g.V)
+      } else {
+        // Fallback: gentle trade-wind-like westward flow at low latitudes
+        U = -3 * Math.cos(lat * Math.PI / 180)
+        V = 0
+      }
+
+      const spd = Math.sqrt(U * U + V * V)
+
+      // Advect on sphere: dLat = V*scale, dLon = U*scale/cos(lat) (in degrees)
+      const cosLat = Math.max(Math.cos(lat * Math.PI / 180), 0.12)
+      const dt60 = delta * 60  // normalize to ~60fps
+      lat += V * SPEED_SCALE * dt60
+      lon += (U * SPEED_SCALE * dt60) / cosLat
+
+      // Wrap longitude, clamp latitude (respawn if at poles)
+      if (lon > 180) lon -= 360
+      if (lon < -180) lon += 360
+      if (lat > 85 || lat < -85) {
+        const { lat: nl, lon: nl2 } = randLatLon()
+        lat = nl; lon = nl2; ages[i] = 0
+      }
+
+      lats[i] = lat; lons[i] = lon
+
+      // Convert to 3D
+      const latR = (lat * Math.PI) / 180
+      const lonR = ((lon + 180) * Math.PI) / 180
+      positions[i * 3]     = -R * Math.cos(latR) * Math.cos(lonR)
+      positions[i * 3 + 1] =  R * Math.sin(latR)
+      positions[i * 3 + 2] =  R * Math.cos(latR) * Math.sin(lonR)
+
+      // Color by speed: slow=blue, medium=cyan, fast=white
+      const t = Math.min(spd / 25, 1)
+      const fade = Math.min(1, (lifetimes[i] - ages[i]) / 1.5) * 0.7 + 0.1
+      colors[i * 3]     = 0.15 + t * 0.85        // R: 0→1
+      colors[i * 3 + 1] = 0.55 + t * 0.45        // G: 0.55→1
+      colors[i * 3 + 2] = fade                    // B: fade out at end of life
     }
-    posAttr.needsUpdate = true
+
+    const geo = pointsRef.current.geometry
+    geo.attributes.position.needsUpdate = true
+    geo.attributes.color.needsUpdate = true
   })
 
-  return (
-    <points ref={pointsRef}>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" count={N} array={positions} itemSize={3} />
-        <bufferAttribute attach="attributes-color"    count={N} array={colors}    itemSize={3} />
-      </bufferGeometry>
-      <pointsMaterial
-        size={0.007}
-        vertexColors
-        transparent
-        opacity={0.65}
-        sizeAttenuation
-        blending={THREE.AdditiveBlending}
-        depthWrite={false}
-      />
-    </points>
-  )
+  const geometry = useMemo(() => {
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3))
+    g.setAttribute('color',    new THREE.BufferAttribute(buffers.colors, 3))
+    return g
+  }, [buffers])
+
+  const material = useMemo(() => new THREE.PointsMaterial({
+    size: 0.004,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.7,
+    sizeAttenuation: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  }), [])
+
+  return <points ref={pointsRef} geometry={geometry} material={material} />
 }

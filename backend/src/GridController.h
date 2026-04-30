@@ -7,9 +7,12 @@ class GridRestController : public drogon::HttpController<GridRestController> {
 public:
     METHOD_LIST_BEGIN
         ADD_METHOD_TO(GridRestController::getState, "/api/grid/state", drogon::Get);
+        ADD_METHOD_TO(GridRestController::inject,   "/api/grid/inject", drogon::Post, drogon::Options);
     METHOD_LIST_END
     void getState(const drogon::HttpRequestPtr&,
                   std::function<void(const drogon::HttpResponsePtr&)>&&) const;
+    void inject(const drogon::HttpRequestPtr&,
+                std::function<void(const drogon::HttpResponsePtr&)>&&);
 };
 
 // WebSocket: /ws/grid  — broadcasts full grid JSON every second
@@ -27,3 +30,4 @@ public:
 
     static void broadcastGrid();
 };
+
