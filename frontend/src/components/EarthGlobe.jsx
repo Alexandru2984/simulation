@@ -51,7 +51,7 @@ const fragmentShader = `
   }
 `
 
-export default function EarthGlobe({ temperature = 20, simTime = 0, onGlobeClick }) {
+export default function EarthGlobe({ temperature = 20, simTime = 0, onGlobeClick, onGlobeHover }) {
   const meshRef = useRef()
   const simTimeRef = useRef(simTime)
   const tempRef = useRef(temperature)
@@ -102,8 +102,16 @@ export default function EarthGlobe({ temperature = 20, simTime = 0, onGlobeClick
     onGlobeClick?.(lat, lon)
   }
 
+  const handleHover = (e) => {
+    e.stopPropagation()
+    const p = e.point.clone().normalize()
+    const lat = Math.asin(p.y) * (180 / Math.PI)
+    const lon = Math.atan2(p.z, -p.x) * (180 / Math.PI) - 180
+    onGlobeHover?.({ lat, lon, clientX: e.clientX, clientY: e.clientY })
+  }
+
   return (
-    <mesh ref={meshRef} onClick={handleClick}>
+    <mesh ref={meshRef} onClick={handleClick} onPointerMove={handleHover} onPointerLeave={() => onGlobeHover?.(null)}>
       <sphereGeometry args={[2, 64, 64]} />
       <shaderMaterial
         vertexShader={vertexShader}

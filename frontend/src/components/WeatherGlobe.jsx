@@ -1,4 +1,4 @@
-import { Suspense, useRef, useEffect, useState } from 'react'
+import { Suspense, useRef, useEffect, useState, useCallback } from 'react'
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
 import { OrbitControls, Stars, Html } from '@react-three/drei'
 import * as THREE from 'three'
@@ -11,6 +11,10 @@ import GridOverlay from './GridOverlay'
 import WindField from './WindField'
 import StormLabels from './StormLabels'
 import FrontalLayer from './FrontalLayer'
+import CountryBorders from './CountryBorders'
+import IsobarLines from './IsobarLines'
+import LightningEffect from './LightningEffect'
+import { sampleGrid } from '../utils/geoUtils'
 
 function latLonToVec3(lat, lon, r = 4.5) {
   const latRad = (lat * Math.PI) / 180
@@ -58,7 +62,7 @@ function CityPin({ location, name }) {
   )
 }
 
-function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode, previewData, selectedCity, tourActive }) {
+function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode, previewData, selectedCity, tourActive, onGlobeHover }) {
   const controlsRef  = useRef()
   const flyTargetRef = useRef(null)
   const { camera }   = useThree()
@@ -128,9 +132,11 @@ function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode
       <Stars radius={100} depth={60} count={6000} factor={4} saturation={0} fade />
 
       <Suspense fallback={null}>
-        <EarthGlobe temperature={temp} simTime={simTime} onGlobeClick={onGlobeClick} />
+        <EarthGlobe temperature={temp} simTime={simTime} onGlobeClick={onGlobeClick} onGlobeHover={onGlobeHover} />
         <CloudLayer windDirection={wDir} windSpeed={wSpeed} gridData={gridData} />
       </Suspense>
+
+      <CountryBorders />
 
       <WindParticles gridData={gridData} />
       <RainParticles gridData={gridData} />
@@ -143,12 +149,16 @@ function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode
         <WindField gridData={displayData} />
       )}
 
+      <IsobarLines gridData={displayData} active={overlayMode === 'pressure'} />
+
       {gridData?.storms?.length > 0 && (
         <StormLabels storms={gridData.storms} />
       )}
       {gridData?.fronts?.length > 0 && (
         <FrontalLayer fronts={gridData.fronts} />
       )}
+
+      <LightningEffect storms={gridData?.storms} />
 
       <CityPin location={selectedCity} name={selectedCity?.name} />
 
@@ -167,12 +177,72 @@ function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode
   )
 }
 
+const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW']
+function windDir(u, v) {
+  const deg = Math.atan2(u, v) * 180 / Math.PI
+  return COMPASS[Math.round(((deg + 360) % 360) / 22.5) % 16]
+}
+
 export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode, previewData, selectedCity }) {
   const [tourActive, setTourActive] = useState(false)
-  const stormCount = gridData?.storms?.length ?? 0
+  const stormCount  = gridData?.storms?.length ?? 0
+  const tooltipRef  = useRef(null)
+  const gridRef     = useRef(null)
+  const lastHoverTs = useRef(0)
+
+  // Keep gridRef up-to-date without causing re-renders
+  useEffect(() => { gridRef.current = previewData ?? gridData }, [gridData, previewData])
 
   // Stop tour if storms disappear
   useEffect(() => { if (stormCount === 0) setTourActive(false) }, [stormCount])
+
+  // Imperative tooltip update — avoids React re-renders on every mouse move
+  const handleGlobeHover = useCallback((info) => {
+    const el = tooltipRef.current
+    if (!el) return
+    if (!info) { el.style.display = 'none'; return }
+
+    // Throttle to ~30fps max
+    const now = Date.now()
+    if (now - lastHoverTs.current < 33) return
+    lastHoverTs.current = now
+
+    const { lat, lon, clientX, clientY } = info
+    const g = gridRef.current
+    const T = g?.T ? sampleGrid(lat, lon, g.T) : null
+    const P = g?.P ? sampleGrid(lat, lon, g.P) : null
+    const U = g?.U ? sampleGrid(lat, lon, g.U) : 0
+    const V = g?.V ? sampleGrid(lat, lon, g.V) : 0
+    const H = g?.H ? sampleGrid(lat, lon, g.H) : null
+    const spd = Math.sqrt(U * U + V * V)
+
+    const latStr = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}`
+    const lonStr = `${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}`
+
+    el.innerHTML = `
+      <div style="color:#94a3b8;font-size:0.7rem;margin-bottom:5px;letter-spacing:0.03em">${latStr}, ${lonStr}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;font-size:0.78rem">
+        <span style="color:#94a3b8">🌡️ Temp</span>
+        <span style="color:#f97316;font-weight:600">${T !== null ? T.toFixed(1) + '°C' : '—'}</span>
+        <span style="color:#94a3b8">🔵 Pressure</span>
+        <span style="color:#60a5fa;font-weight:600">${P !== null ? P.toFixed(1) + ' hPa' : '—'}</span>
+        <span style="color:#94a3b8">💨 Wind</span>
+        <span style="color:#38bdf8;font-weight:600">${spd.toFixed(1)} m/s ${windDir(U, V)}</span>
+        <span style="color:#94a3b8">💧 Humidity</span>
+        <span style="color:#34d399;font-weight:600">${H !== null ? (H * 100).toFixed(0) + '%' : '—'}</span>
+      </div>
+    `
+
+    // Smart edge detection: flip tooltip left/right and up/down near screen edges
+    const W = window.innerWidth, H2 = window.innerHeight
+    const ttW = 200, ttH = 110
+    const left = clientX + 14 + ttW > W ? clientX - ttW - 10 : clientX + 14
+    const top  = clientY + 14 + ttH > H2 ? clientY - ttH - 6 : clientY + 14
+
+    el.style.left    = left + 'px'
+    el.style.top     = top  + 'px'
+    el.style.display = 'block'
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -208,6 +278,29 @@ export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation,
         </button>
       )}
 
+      {/* Hover tooltip — imperatively updated to avoid React re-render overhead */}
+      <div
+        ref={tooltipRef}
+        style={{
+          display: 'none',
+          position: 'fixed',
+          zIndex: 35,
+          background: 'rgba(3,7,17,0.88)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 10,
+          padding: '10px 14px',
+          color: '#e2e8f0',
+          pointerEvents: 'none',
+          backdropFilter: 'blur(14px)',
+          WebkitBackdropFilter: 'blur(14px)',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+          minWidth: 190,
+          fontFamily: 'inherit',
+          fontSize: '0.82rem',
+          lineHeight: 1.6,
+        }}
+      />
+
       <Canvas
         camera={{ position: [0, 1.5, 4.5], fov: 50 }}
         style={{ background: '#030711' }}
@@ -222,6 +315,7 @@ export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation,
           previewData={previewData}
           selectedCity={selectedCity}
           tourActive={tourActive}
+          onGlobeHover={handleGlobeHover}
         />
       </Canvas>
     </>
