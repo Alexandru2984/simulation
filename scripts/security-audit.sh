@@ -164,6 +164,12 @@ bad_type_status="$(http_code -X POST -H "Origin: https://${domain}" --data '{"va
 json_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{"value":1}' "https://${domain}/api/weather/speed")"
 [[ "$json_status" == "200" ]] && pass "same-origin JSON mutation succeeds" || fail "same-origin JSON mutation returned ${json_status}"
 
+invalid_json_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{"value":' "https://${domain}/api/weather/speed")"
+[[ "$invalid_json_status" == "400" ]] && pass "invalid mutation JSON is rejected" || fail "invalid mutation JSON returned ${invalid_json_status}"
+
+missing_field_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{}' "https://${domain}/api/weather/speed")"
+[[ "$missing_field_status" == "400" ]] && pass "mutation missing required field is rejected" || fail "mutation missing required field returned ${missing_field_status}"
+
 forecast_no_origin_status="$(http_code -X POST -H 'Content-Type: application/json' --data '{"steps":10}' "https://${domain}/api/grid/forecast")"
 [[ "$forecast_no_origin_status" == "403" ]] && pass "forecast POST without Origin is rejected" || fail "forecast POST without Origin returned ${forecast_no_origin_status}"
 
@@ -172,6 +178,9 @@ forecast_bad_type_status="$(http_code -X POST -H "Origin: https://${domain}" --d
 
 forecast_json_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{"steps":10}' "https://${domain}/api/grid/forecast")"
 [[ "$forecast_json_status" == "200" ]] && pass "same-origin JSON forecast succeeds" || fail "same-origin JSON forecast returned ${forecast_json_status}"
+
+forecast_invalid_json_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{"steps":' "https://${domain}/api/grid/forecast")"
+[[ "$forecast_invalid_json_status" == "400" ]] && pass "invalid forecast JSON is rejected" || fail "invalid forecast JSON returned ${forecast_invalid_json_status}"
 
 for method in TRACE PUT DELETE PATCH; do
     root_method_status="$(http_code -X "$method" "https://${domain}/")"

@@ -106,7 +106,15 @@ void GridRestController::forecast(
 
     int steps = 100;  // default: 100 steps → 10 snapshots
     auto j = req->jsonObject();
-    if (j && (*j).isMember("steps") && (*j)["steps"].isInt()) {
+    if (!j) {
+        cb(jsonResp("{\"error\":\"invalid json\"}", drogon::k400BadRequest));
+        return;
+    }
+    if ((*j).isMember("steps")) {
+        if (!(*j)["steps"].isInt()) {
+            cb(jsonResp("{\"error\":\"type mismatch\"}", drogon::k400BadRequest));
+            return;
+        }
         steps = std::max(1, std::min(200, (*j)["steps"].asInt()));
     }
     cb(jsonResp(GridSim::instance().getForecast(steps)));

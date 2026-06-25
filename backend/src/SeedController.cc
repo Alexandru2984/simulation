@@ -73,17 +73,25 @@ void SeedController::seedWeather(
     }
     if (!Security::requireMutationAccess(req, cb)) return;
 
-    double lat = 44.43, lon = 26.10;
     auto j = req->jsonObject();
-    if (j) {
-        if ((*j).isMember("lat") && (*j)["lat"].isNumeric()) lat = (*j)["lat"].asDouble();
-        if ((*j).isMember("lon") && (*j)["lon"].isNumeric()) lon = (*j)["lon"].asDouble();
+    if (!j) {
+        cb(Security::json("{\"error\":\"invalid json\"}", drogon::k400BadRequest));
+        return;
     }
+    if (!(*j).isMember("lat") || !(*j).isMember("lon")) {
+        cb(Security::json("{\"error\":\"missing required fields: lat, lon\"}",
+                          drogon::k400BadRequest));
+        return;
+    }
+    if (!(*j)["lat"].isNumeric() || !(*j)["lon"].isNumeric()) {
+        cb(Security::json("{\"error\":\"type mismatch\"}", drogon::k400BadRequest));
+        return;
+    }
+
+    double lat = (*j)["lat"].asDouble();
+    double lon = (*j)["lon"].asDouble();
     if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-        auto r = drogon::HttpResponse::newHttpJsonResponse(Json::Value());
-        r->setStatusCode(drogon::k400BadRequest);
-        corsHeaders(r);
-        cb(r);
+        cb(Security::json("{\"error\":\"bad coordinates\"}", drogon::k400BadRequest));
         return;
     }
 
@@ -191,11 +199,22 @@ void SeedController::setSpeed(
     }
     if (!Security::requireMutationAccess(req, cb)) return;
 
-    double value = 1.0;
     auto j = req->jsonObject();
-    if (j && (*j).isMember("value") && (*j)["value"].isNumeric()) {
-        value = (*j)["value"].asDouble();
+    if (!j) {
+        cb(Security::json("{\"error\":\"invalid json\"}", drogon::k400BadRequest));
+        return;
     }
+    if (!(*j).isMember("value")) {
+        cb(Security::json("{\"error\":\"missing required field: value\"}",
+                          drogon::k400BadRequest));
+        return;
+    }
+    if (!(*j)["value"].isNumeric()) {
+        cb(Security::json("{\"error\":\"type mismatch\"}", drogon::k400BadRequest));
+        return;
+    }
+
+    double value = (*j)["value"].asDouble();
     value = std::max(0.1, std::min(100.0, value));
 
     WeatherSim::instance().setSpeed(value);
