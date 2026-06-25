@@ -35,3 +35,18 @@ void HealthController::readyz(
     cb(Security::json(body, ready ? drogon::k200OK : drogon::k503ServiceUnavailable,
                       "GET, OPTIONS"));
 }
+
+void HealthController::version(
+    const drogon::HttpRequestPtr&,
+    std::function<void(const drogon::HttpResponsePtr&)>&& cb) const
+{
+    char body[256];
+    std::snprintf(body, sizeof(body),
+        "{\"service\":\"weather_backend\",\"gitSha\":\"%s\","
+        "\"gitDirty\":%s,\"buildTimeUtc\":\"%s\",\"uptimeSeconds\":%lld}",
+        RuntimeInfo::buildGitSha(),
+        RuntimeInfo::buildGitDirtyJson(),
+        RuntimeInfo::buildTimeUtc(),
+        RuntimeInfo::uptimeSeconds());
+    cb(Security::json(body, drogon::k200OK, "GET, OPTIONS"));
+}

@@ -89,6 +89,7 @@ sudo logrotate -d /etc/logrotate.d/weather-backend
 curl -fsS https://simulation.micutu.com/api/metrics
 curl -fsS https://simulation.micutu.com/api/healthz
 curl -fsS https://simulation.micutu.com/api/readyz
+curl -fsS https://simulation.micutu.com/api/version
 curl -sS -D - -o - -X POST \
   -H 'Origin: https://simulation.micutu.com' \
   -H 'Content-Type: application/json' \

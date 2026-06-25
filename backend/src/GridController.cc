@@ -133,17 +133,21 @@ void GridRestController::getMetrics(
     std::size_t clients;
     { std::lock_guard<std::mutex> lk(wsGridMtx); clients = wsGridClients.size(); }
 
-    char buf[512];
+    char buf[640];
     snprintf(buf, sizeof(buf),
         "{\"tick\":%lld,\"simTime\":%.1f,\"simSpeed\":%.1f,"
         "\"rows\":%d,\"cols\":%d,\"gridCells\":%d,"
         "\"wsClients\":%zu,\"uptimeSeconds\":%lld,"
-        "\"version\":\"1.0\",\"status\":\"ok\"}",
+        "\"version\":\"1.0\",\"gitSha\":\"%s\",\"gitDirty\":%s,"
+        "\"buildTimeUtc\":\"%s\",\"status\":\"ok\"}",
         (long long)sim.tick(),
         (double)sim.simTime(),
         (double)sim.speed(),
         GridSim::ROWS, GridSim::COLS, GridSim::SIZE,
         clients,
-        RuntimeInfo::uptimeSeconds());
+        RuntimeInfo::uptimeSeconds(),
+        RuntimeInfo::buildGitSha(),
+        RuntimeInfo::buildGitDirtyJson(),
+        RuntimeInfo::buildTimeUtc());
     cb(jsonResp(buf));
 }

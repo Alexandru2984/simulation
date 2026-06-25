@@ -43,6 +43,8 @@ curl -fsS "https://${domain}/api/readyz"
 echo
 curl -fsS "https://${domain}/api/metrics"
 echo
+curl -fsS "https://${domain}/api/version" | rg '"gitSha":'
+echo
 curl -fsS -D - -o /dev/null "https://${domain}/" | rg -i '^(strict-transport-security|content-security-policy|x-frame-options):'
 
 echo "==> Deploy complete"

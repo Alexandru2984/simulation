@@ -147,7 +147,7 @@ else
 fi
 
 section "Runtime API controls"
-for endpoint in healthz readyz metrics; do
+for endpoint in healthz readyz metrics version; do
     if curl -fsS "https://${domain}/api/${endpoint}" >/dev/null; then
         pass "/api/${endpoint} returns successfully"
     else
