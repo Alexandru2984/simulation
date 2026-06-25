@@ -206,7 +206,10 @@ PORT_BACKEND=8094
 PORT_FRONTEND=5173
 DOMAIN=simulation.micutu.com
 SSL_EMAIL=alex_mihai984@yahoo.com
-OWM_API_KEY=your_openweathermap_key
+OPENWEATHER_API_KEY=your_openweathermap_key
+SIM_ALLOWED_ORIGIN=https://simulation.micutu.com
+# Optional: requires X-Simulation-Token on mutating endpoints when set.
+SIM_MUTATION_TOKEN=change-me
 ```
 
 ---
@@ -233,6 +236,11 @@ simulation/
 │       ├── components/          — 15+ React/Three.js components
 │       ├── hooks/               — useWeatherSocket, useGridSocket
 │       └── utils/geoUtils.js    — Grid coordinate math
+├── deploy/
+│   ├── weather-backend.service
+│   └── nginx/
+│       ├── simulation.micutu.com.conf
+│       └── snippets/simulation-security-headers.conf
 ├── logs/
 ├── .env
 ├── .gitignore
@@ -246,7 +254,7 @@ simulation/
 - **Nginx**: HSTS with `preload`, CSP, `X-Frame-Options`, `X-Content-Type-Options`, rate limiting (10 req/s burst 20)
 - **TLS**: TLS 1.2 + 1.3 only (1.0/1.1 disabled)
 - **Backend**: Bound to `127.0.0.1:8094` only (not externally reachable)
-- **systemd**: `NoNewPrivileges`, `PrivateTmp`, `PrivateDevices`, `ProtectSystem=strict`, `SystemCallFilter=@system-service`, `CapabilityBoundingSet=` (empty), `UMask=0077` — hardening score 2.0/10 (OK)
+- **systemd**: deploy template includes `NoNewPrivileges`, `PrivateTmp`, `PrivateDevices`, `ProtectSystem=strict`, `ProtectHome=read-only`, `ReadWritePaths=/home/micu/simulation/logs`, `SystemCallFilter=@system-service`, `CapabilityBoundingSet=` (empty), `UMask=0077`
 - **Firewall**: UFW active, default DENY, only 22/80/443 open
 
 ---

@@ -1,0 +1,54 @@
+[Unit]
+Description=Weather Simulation Backend (Drogon C++)
+After=network-online.target
+Wants=network-online.target
+Documentation=https://simulation.micutu.com
+
+[Service]
+Type=simple
+User=micu
+Group=micu
+WorkingDirectory=/home/micu/simulation/backend/build
+EnvironmentFile=/home/micu/simulation/.env
+Environment=SIM_ALLOWED_ORIGIN=https://simulation.micutu.com
+# Optional: when set, mutating endpoints require X-Simulation-Token.
+# Environment=SIM_MUTATION_TOKEN=change-me
+ExecStart=/home/micu/simulation/backend/build/weather_backend
+Restart=always
+RestartSec=5
+
+StandardOutput=append:/home/micu/simulation/logs/backend.log
+StandardError=append:/home/micu/simulation/logs/backend-error.log
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/micu/simulation/logs
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectClock=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RemoveIPC=true
+RestrictNamespaces=true
+
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+UMask=0077
+MemoryMax=512M
+CPUQuota=80%
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

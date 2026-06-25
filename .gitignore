@@ -1,11 +1,13 @@
 node_modules/
 build/
 dist/
+.tmp/
 *.env
 .env
 logs/
 backend/build/
 frontend/dist/
+frontend/.npm-cache/
 *.o
 *.a
 CMakeCache.txt
