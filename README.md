@@ -199,16 +199,7 @@ npm run build
 
 ### Configure & Deploy
 ```bash
-# Copy systemd service
-sudo cp deploy/weather-backend.service /etc/systemd/system/
-sudo systemctl enable --now weather-backend
-
-# SSL certificate
-sudo certbot --nginx -d simulation.micutu.com \
-  --email alex_mihai984@yahoo.com --non-interactive --agree-tos
-
-# Reload Nginx
-sudo nginx -t && sudo systemctl reload nginx
+scripts/deploy.sh
 ```
 
 ### Environment (`.env`)

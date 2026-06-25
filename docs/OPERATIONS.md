@@ -18,6 +18,15 @@ curl -fsS https://simulation.micutu.com/api/healthz
 curl -fsS https://simulation.micutu.com/api/readyz
 ```
 
+## Full Deploy
+
+```bash
+cd /home/micu/simulation
+scripts/deploy.sh
+```
+
+The script runs `make check`, builds backend/frontend, backs up live systemd and Nginx config, validates Nginx and logrotate, restarts the backend, reloads Nginx, then runs smoke tests.
+
 ## Deploy Frontend
 
 ```bash
