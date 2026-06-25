@@ -173,6 +173,13 @@ forecast_bad_type_status="$(http_code -X POST -H "Origin: https://${domain}" --d
 forecast_json_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{"steps":10}' "https://${domain}/api/grid/forecast")"
 [[ "$forecast_json_status" == "200" ]] && pass "same-origin JSON forecast succeeds" || fail "same-origin JSON forecast returned ${forecast_json_status}"
 
+for method in TRACE PUT DELETE PATCH; do
+    root_method_status="$(http_code -X "$method" "https://${domain}/")"
+    api_method_status="$(http_code -X "$method" "https://${domain}/api/healthz")"
+    [[ "$root_method_status" == "405" ]] && pass "${method} / is rejected" || fail "${method} / returned ${root_method_status}"
+    [[ "$api_method_status" == "405" ]] && pass "${method} /api/healthz is rejected" || fail "${method} /api/healthz returned ${api_method_status}"
+done
+
 section "Dependency and host hygiene"
 if (cd frontend && npm audit --audit-level=moderate >/dev/null); then
     pass "frontend npm audit passes at moderate threshold"
