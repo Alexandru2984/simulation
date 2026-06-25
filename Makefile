@@ -4,11 +4,14 @@ BACKEND_BUILD_DIR ?= backend/build
 CMAKE_BUILD_TYPE ?= Release
 NPM ?= npm
 
-.PHONY: all check backend-configure backend-build backend-test frontend-install frontend-audit frontend-lint frontend-build clean
+.PHONY: all check security-audit backend-configure backend-build backend-test frontend-install frontend-audit frontend-lint frontend-build clean
 
 all: check
 
 check: backend-test frontend-audit frontend-lint frontend-build
+
+security-audit:
+	scripts/security-audit.sh
 
 backend-configure:
 	cmake -S backend -B $(BACKEND_BUILD_DIR) -DCMAKE_BUILD_TYPE=$(CMAKE_BUILD_TYPE)

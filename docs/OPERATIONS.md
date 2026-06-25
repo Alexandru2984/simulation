@@ -4,9 +4,13 @@
 
 ```bash
 make check
+make security-audit
 ```
 
-Runs backend configure/build/tests and frontend audit/lint/build.
+`make check` runs backend configure/build/tests and frontend audit/lint/build.
+`make security-audit` checks tracked secret patterns, runtime exposure, systemd
+hardening, live headers, Cloudflare origin guard, API mutation controls, frontend
+dependency audit, and `/tmp` inode pressure.
 
 ## Deploy Backend
 
