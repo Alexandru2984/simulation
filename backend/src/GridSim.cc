@@ -320,6 +320,17 @@ void GridSim::loop() {
     }
 }
 
+#ifdef GRID_SIM_TESTING
+void GridSim::runTestSteps(int steps) {
+    stop();
+    setSpeed(1.0f);
+    for (int i = 0; i < steps; i++) {
+        step(DT);
+        if (tick_.load() % 30 == 0) recordHistory();
+    }
+}
+#endif
+
 // ── History ring buffer ───────────────────────────────────────────────────────
 void GridSim::recordHistory() {
     Snapshot snap;

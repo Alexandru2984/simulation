@@ -62,6 +62,10 @@ public:
     // Hard injection (user events) — directly modifies grid for immediate visual effect
     void inject(float lat, float lon, EventType type, float intensity = 1.0f);
 
+#ifdef GRID_SIM_TESTING
+    void runTestSteps(int steps);
+#endif
+
     // Helper geometry — static so physicsStep can use them without an instance
     static float cellLat(int r) { return -87.5f + r * 5.0f; }
     static float cellLon(int c) { return -177.5f + c * 5.0f; }
@@ -106,4 +110,3 @@ private:
     int histCount_{0};   // number of valid entries (up to HISTORY_CAP)
     mutable std::mutex histMtx_;
 };
-

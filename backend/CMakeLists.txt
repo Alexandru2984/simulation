@@ -24,6 +24,7 @@ add_executable(test_gridsim
 )
 target_link_libraries(test_gridsim PRIVATE Drogon::Drogon)
 target_include_directories(test_gridsim PRIVATE src)
+target_compile_definitions(test_gridsim PRIVATE GRID_SIM_TESTING)
 
 target_link_libraries(weather_backend PRIVATE Drogon::Drogon)
 target_include_directories(weather_backend PRIVATE src)

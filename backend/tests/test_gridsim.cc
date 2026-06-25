@@ -25,17 +25,8 @@ static void require(bool cond, const char* msg) {
 
 // Run N physics steps from a fresh GridSim (via a local copy trick)
 static std::array<GridSim::Cell, GridSim::SIZE> runSteps(int n) {
-    // Warm up the singleton by stepping it
     GridSim& sim = GridSim::instance();
-    // We just call getGrid() before/after manually advancing tick via start/stop
-    // Instead, do a quick start/stop cycle for n steps
-    sim.setSpeed(1.0f);
-    sim.start();
-    // Wait until at least n ticks have elapsed
-    long long target = sim.tick() + n;
-    while (sim.tick() < target)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    sim.stop();
+    sim.runTestSteps(n);
     return sim.getGrid();
 }
 
@@ -279,10 +270,6 @@ TEST(simtime_increases) {
     float t1 = sim.simTime();
     require(t1 > t0, "simTime must increase after physics steps");
 }
-
-// ── main ──────────────────────────────────────────────────────────────────────
-#include <thread>
-#include <chrono>
 
 int main() {
     printf("\n=== GridSim Unit Tests ===\n\n");
