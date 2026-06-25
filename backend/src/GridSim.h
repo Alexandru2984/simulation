@@ -42,7 +42,7 @@ public:
     void stop();
     void setSpeed(float s);
     float speed()   const { return speed_.load(); }
-    float simTime() const { return simTime_; }
+    float simTime() const;
 
     std::string getStateJson() const;
     std::array<Cell, SIZE> getGrid() const;
@@ -106,5 +106,4 @@ private:
     int histCount_{0};   // number of valid entries (up to HISTORY_CAP)
     mutable std::mutex histMtx_;
 };
-
 

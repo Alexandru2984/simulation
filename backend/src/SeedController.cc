@@ -1,4 +1,5 @@
 #include "SeedController.h"
+#include "Security.h"
 #include <drogon/HttpClient.h>
 #include <cstdlib>
 #include <cmath>
@@ -29,11 +30,8 @@ static const int N_PRESETS = sizeof(PRESETS) / sizeof(PRESETS[0]);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-static const std::string ALLOWED_ORIGIN = "https://simulation.micutu.com";
-
 static void corsHeaders(const drogon::HttpResponsePtr& r) {
-    r->addHeader("Access-Control-Allow-Origin",  ALLOWED_ORIGIN);
-    r->addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    Security::addCorsHeaders(r);
 }
 
 static const CityPreset* nearestPreset(double lat, double lon) {
@@ -73,6 +71,7 @@ void SeedController::seedWeather(
         cb(r);
         return;
     }
+    if (!Security::requireMutationAccess(req, cb)) return;
 
     double lat = 44.43, lon = 26.10;
     auto j = req->jsonObject();
@@ -190,6 +189,7 @@ void SeedController::setSpeed(
         cb(r);
         return;
     }
+    if (!Security::requireMutationAccess(req, cb)) return;
 
     double value = 1.0;
     auto j = req->jsonObject();

@@ -1,5 +1,6 @@
 #include "GridController.h"
 #include "GridSim.h"
+#include "Security.h"
 #include <drogon/drogon.h>
 #include <mutex>
 #include <set>
@@ -7,18 +8,9 @@
 static std::mutex                                    wsGridMtx;
 static std::set<drogon::WebSocketConnectionPtr>      wsGridClients;
 
-static const std::string ALLOWED_ORIGIN = "https://simulation.micutu.com";
-
 static drogon::HttpResponsePtr jsonResp(const std::string& body,
                                         drogon::HttpStatusCode code = drogon::k200OK) {
-    auto r = drogon::HttpResponse::newHttpResponse();
-    r->setStatusCode(code);
-    r->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-    r->addHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
-    r->addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    r->addHeader("Access-Control-Allow-Headers", "Content-Type");
-    r->setBody(body);
-    return r;
+    return Security::json(body, code);
 }
 
 void GridRestController::getState(
@@ -33,6 +25,7 @@ void GridRestController::inject(
     std::function<void(const drogon::HttpResponsePtr&)>&& cb)
 {
     if (req->method() == drogon::Options) { cb(jsonResp("{}")); return; }
+    if (!Security::requireMutationAccess(req, cb)) return;
 
     auto j = req->jsonObject();
     if (!j) { cb(jsonResp("{\"error\":\"invalid json\"}", drogon::k400BadRequest)); return; }
@@ -71,7 +64,7 @@ void GridWsController::handleNewConnection(
     const drogon::WebSocketConnectionPtr& conn)
 {
     auto origin = req->getHeader("Origin");
-    if (!origin.empty() && origin != ALLOWED_ORIGIN) {
+    if (!origin.empty() && origin != Security::allowedOrigin()) {
         conn->shutdown(drogon::CloseCode::kViolation, "forbidden origin");
         return;
     }
@@ -94,8 +87,12 @@ void GridWsController::handleNewMessage(
 
 void GridWsController::broadcastGrid() {
     std::string json = GridSim::instance().getStateJson();
-    std::lock_guard<std::mutex> lk(wsGridMtx);
-    for (auto& conn : wsGridClients)
+    std::vector<drogon::WebSocketConnectionPtr> clients;
+    {
+        std::lock_guard<std::mutex> lk(wsGridMtx);
+        clients.assign(wsGridClients.begin(), wsGridClients.end());
+    }
+    for (auto& conn : clients)
         conn->send(json);
 }
 
@@ -146,4 +143,3 @@ void GridRestController::getMetrics(
         clients);
     cb(jsonResp(buf));
 }
-

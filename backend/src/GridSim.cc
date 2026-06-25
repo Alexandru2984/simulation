@@ -157,12 +157,9 @@ std::array<GridSim::Cell, GridSim::SIZE> GridSim::physicsStep(
 
 // ── Live physics step ─────────────────────────────────────────────────────────
 void GridSim::step(float dt) {
-    std::array<Cell, SIZE> next = physicsStep(grid_, simTime_, dt);
-    {
-        std::lock_guard<std::mutex> lk(mutex_);
-        grid_ = next;
-        drainNudges();
-    }
+    std::lock_guard<std::mutex> lk(mutex_);
+    grid_ = physicsStep(grid_, simTime_, dt);
+    drainNudges();
     simTime_ += dt * speed_.load();
     tick_++;
 }
@@ -342,6 +339,11 @@ void GridSim::recordHistory() {
 std::array<GridSim::Cell, GridSim::SIZE> GridSim::getGrid() const {
     std::lock_guard<std::mutex> lk(mutex_);
     return grid_;
+}
+
+float GridSim::simTime() const {
+    std::lock_guard<std::mutex> lk(mutex_);
+    return simTime_;
 }
 
 // ── Forecast ─────────────────────────────────────────────────────────────────

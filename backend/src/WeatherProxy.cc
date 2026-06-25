@@ -1,4 +1,5 @@
 #include "WeatherProxy.h"
+#include "Security.h"
 #include <drogon/drogon.h>
 #include <cstdlib>
 #include <cmath>
@@ -39,13 +40,7 @@ void WeatherProxy::cachePut(const std::string& key, std::string body, int ttlSec
 // ── Response helpers ──────────────────────────────────────────────────────────
 drogon::HttpResponsePtr WeatherProxy::corsJson(const std::string& body,
                                                 drogon::HttpStatusCode code) {
-    auto r = drogon::HttpResponse::newHttpResponse();
-    r->setStatusCode(code);
-    r->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-    r->addHeader("Access-Control-Allow-Origin",  "https://simulation.micutu.com");
-    r->addHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-    r->setBody(body);
-    return r;
+    return Security::json(body, code, "GET, OPTIONS");
 }
 
 drogon::HttpResponsePtr WeatherProxy::errorResp(const std::string& msg,
@@ -96,7 +91,7 @@ void WeatherProxy::realtime(
     url << "/data/2.5/weather?lat=" << lat << "&lon=" << lon
         << "&appid=" << key << "&units=metric";
 
-    auto client = drogon::HttpClient::newHttpClient("http://api.openweathermap.org");
+    auto client = drogon::HttpClient::newHttpClient("https://api.openweathermap.org");
     auto owmReq = drogon::HttpRequest::newHttpRequest();
     owmReq->setMethod(drogon::Get);
     owmReq->setPath(url.str());
@@ -149,7 +144,7 @@ void WeatherProxy::search(
 
     std::string path = "/geo/1.0/direct?q=" + encoded + "&limit=5&appid=" + key;
 
-    auto client = drogon::HttpClient::newHttpClient("http://api.openweathermap.org");
+    auto client = drogon::HttpClient::newHttpClient("https://api.openweathermap.org");
     auto owmReq = drogon::HttpRequest::newHttpRequest();
     owmReq->setMethod(drogon::Get);
     owmReq->setPath(path);

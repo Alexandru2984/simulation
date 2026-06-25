@@ -27,7 +27,7 @@ static void scheduleAssimilation() {
         path << "/data/2.5/weather?lat=" << city.lat << "&lon=" << city.lon
              << "&appid=" << key << "&units=metric";
 
-        auto client = drogon::HttpClient::newHttpClient("http://api.openweathermap.org");
+        auto client = drogon::HttpClient::newHttpClient("https://api.openweathermap.org");
         auto req    = drogon::HttpRequest::newHttpRequest();
         req->setMethod(drogon::Get);
         req->setPath(path.str());

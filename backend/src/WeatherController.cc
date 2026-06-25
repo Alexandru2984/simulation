@@ -1,12 +1,11 @@
 #include "WeatherController.h"
+#include "Security.h"
 #include <drogon/drogon.h>
 #include <json/json.h>
 #include <mutex>
 #include <set>
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-static const std::string ALLOWED_ORIGIN = "https://simulation.micutu.com";
 
 static Json::Value stateToJson(const WeatherState& s) {
     Json::Value v;
@@ -24,10 +23,15 @@ void WeatherRestController::getWeather(
     const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& cb)
 {
+    if (req->method() == drogon::Options) {
+        auto resp = drogon::HttpResponse::newHttpResponse();
+        Security::addCorsHeaders(resp, "GET, OPTIONS");
+        cb(resp);
+        return;
+    }
     auto s = WeatherSim::instance().current();
     auto resp = drogon::HttpResponse::newHttpJsonResponse(stateToJson(s));
-    resp->addHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
-    resp->addHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    Security::addCorsHeaders(resp, "GET, OPTIONS");
     cb(resp);
 }
 
@@ -41,7 +45,7 @@ void WeatherWsController::handleNewConnection(
     const drogon::WebSocketConnectionPtr& conn)
 {
     auto origin = req->getHeader("Origin");
-    if (!origin.empty() && origin != ALLOWED_ORIGIN) {
+    if (!origin.empty() && origin != Security::allowedOrigin()) {
         conn->shutdown(drogon::CloseCode::kViolation, "forbidden origin");
         return;
     }
@@ -80,8 +84,12 @@ void broadcastWeather() {
     std::string msg = fw.write(stateToJson(s));
     msg.erase(msg.find_last_not_of("\n") + 1); // trim trailing newline
 
-    std::lock_guard<std::mutex> lk(ws_mtx);
-    for (auto& c : ws_clients) {
+    std::vector<drogon::WebSocketConnectionPtr> clients;
+    {
+        std::lock_guard<std::mutex> lk(ws_mtx);
+        clients.assign(ws_clients.begin(), ws_clients.end());
+    }
+    for (auto& c : clients) {
         if (c->connected())
             c->send(msg);
     }
