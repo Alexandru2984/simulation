@@ -54,7 +54,7 @@ inline bool hasJsonContentType(const drogon::HttpRequestPtr& req) {
            contentType.compare(0, expected.size(), expected) == 0;
 }
 
-inline bool requireMutationAccess(
+inline bool requireJsonPostAccess(
     const drogon::HttpRequestPtr& req,
     const std::function<void(const drogon::HttpResponsePtr&)>& cb) {
     const auto origin = req->getHeader("Origin");
@@ -68,6 +68,14 @@ inline bool requireMutationAccess(
                 drogon::k415UnsupportedMediaType));
         return false;
     }
+
+    return true;
+}
+
+inline bool requireMutationAccess(
+    const drogon::HttpRequestPtr& req,
+    const std::function<void(const drogon::HttpResponsePtr&)>& cb) {
+    if (!requireJsonPostAccess(req, cb)) return false;
 
     const auto& token = mutationToken();
     if (!token.empty() && req->getHeader("X-Simulation-Token") != token) {

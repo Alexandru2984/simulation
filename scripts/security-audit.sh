@@ -164,6 +164,15 @@ bad_type_status="$(http_code -X POST -H "Origin: https://${domain}" --data '{"va
 json_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{"value":1}' "https://${domain}/api/weather/speed")"
 [[ "$json_status" == "200" ]] && pass "same-origin JSON mutation succeeds" || fail "same-origin JSON mutation returned ${json_status}"
 
+forecast_no_origin_status="$(http_code -X POST -H 'Content-Type: application/json' --data '{"steps":10}' "https://${domain}/api/grid/forecast")"
+[[ "$forecast_no_origin_status" == "403" ]] && pass "forecast POST without Origin is rejected" || fail "forecast POST without Origin returned ${forecast_no_origin_status}"
+
+forecast_bad_type_status="$(http_code -X POST -H "Origin: https://${domain}" --data '{"steps":10}' "https://${domain}/api/grid/forecast")"
+[[ "$forecast_bad_type_status" == "415" ]] && pass "forecast POST without JSON content type is rejected" || fail "forecast POST without JSON content type returned ${forecast_bad_type_status}"
+
+forecast_json_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{"steps":10}' "https://${domain}/api/grid/forecast")"
+[[ "$forecast_json_status" == "200" ]] && pass "same-origin JSON forecast succeeds" || fail "same-origin JSON forecast returned ${forecast_json_status}"
+
 section "Dependency and host hygiene"
 if (cd frontend && npm audit --audit-level=moderate >/dev/null); then
     pass "frontend npm audit passes at moderate threshold"

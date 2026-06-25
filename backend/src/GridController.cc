@@ -102,6 +102,7 @@ void GridRestController::forecast(
     std::function<void(const drogon::HttpResponsePtr&)>&& cb) const
 {
     if (req->method() == drogon::Options) { cb(jsonResp("{}")); return; }
+    if (!Security::requireJsonPostAccess(req, cb)) return;
 
     int steps = 100;  // default: 100 steps → 10 snapshots
     auto j = req->jsonObject();
