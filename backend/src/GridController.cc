@@ -1,5 +1,6 @@
 #include "GridController.h"
 #include "GridSim.h"
+#include "RuntimeInfo.h"
 #include "Security.h"
 #include <drogon/drogon.h>
 #include <mutex>
@@ -135,11 +136,13 @@ void GridRestController::getMetrics(
     snprintf(buf, sizeof(buf),
         "{\"tick\":%lld,\"simTime\":%.1f,\"simSpeed\":%.1f,"
         "\"rows\":%d,\"cols\":%d,\"gridCells\":%d,"
-        "\"wsClients\":%zu,\"version\":\"1.0\",\"status\":\"ok\"}",
+        "\"wsClients\":%zu,\"uptimeSeconds\":%lld,"
+        "\"version\":\"1.0\",\"status\":\"ok\"}",
         (long long)sim.tick(),
         (double)sim.simTime(),
         (double)sim.speed(),
         GridSim::ROWS, GridSim::COLS, GridSim::SIZE,
-        clients);
+        clients,
+        RuntimeInfo::uptimeSeconds());
     cb(jsonResp(buf));
 }

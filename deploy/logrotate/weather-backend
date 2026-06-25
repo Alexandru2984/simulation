@@ -1,0 +1,10 @@
+/home/micu/simulation/logs/backend.log /home/micu/simulation/logs/backend-error.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su micu micu
+}

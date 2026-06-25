@@ -249,10 +249,14 @@ simulation/
 │       ├── hooks/               — useWeatherSocket, useGridSocket
 │       └── utils/geoUtils.js    — Grid coordinate math
 ├── deploy/
+│   ├── logrotate/
+│   │   └── weather-backend
 │   ├── weather-backend.service
 │   └── nginx/
 │       ├── simulation.micutu.com.conf
 │       └── snippets/simulation-security-headers.conf
+├── docs/
+│   └── OPERATIONS.md
 ├── logs/
 ├── .env
 ├── .gitignore
