@@ -19,7 +19,18 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             cmake \
             g++ \
-            libdrogon-dev
+            libboost-dev \
+            libbrotli-dev \
+            libdrogon-dev \
+            libhiredis-dev \
+            libjsoncpp-dev \
+            libmariadb-dev \
+            libmariadb-dev-compat \
+            libpq-dev \
+            libsqlite3-dev \
+            libyaml-cpp-dev \
+            uuid-dev \
+            zlib1g-dev
 
       - name: Build backend
         run: make backend-build
