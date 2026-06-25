@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import WeatherGlobe from './components/WeatherGlobe'
-import WeatherHUD from './components/WeatherHUD'
-import WeatherPopup from './components/WeatherPopup'
-import EventPanel from './components/EventPanel'
-import SimStats from './components/SimStats'
-import ForecastPanel from './components/ForecastPanel'
+import { Suspense, lazy, useState, useEffect, useCallback, useRef } from 'react'
 import { useWeatherSocket } from './hooks/useWeatherSocket'
 import { useGridSocket } from './hooks/useGridSocket'
+
+const WeatherGlobe = lazy(() => import('./components/WeatherGlobe'))
+const WeatherHUD = lazy(() => import('./components/WeatherHUD'))
+const WeatherPopup = lazy(() => import('./components/WeatherPopup'))
+const EventPanel = lazy(() => import('./components/EventPanel'))
+const SimStats = lazy(() => import('./components/SimStats'))
+const ForecastPanel = lazy(() => import('./components/ForecastPanel'))
 
 const CITY_FLAGS = {
   'Bucharest':    '🇷🇴', 'London':       '🇬🇧', 'Tokyo':        '🇯🇵',
@@ -118,50 +119,52 @@ export default function App() {
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden', background: '#030711', cursor: cursorStyle }}>
-      <WeatherGlobe
-        weatherData={data}
-        onGlobeClick={handleGlobeClick}
-        flyToLocation={flyToLocation}
-        gridData={gridData}
-        overlayMode={overlayMode}
-        previewData={previewSnap}
-        selectedCity={selectedCity}
-      />
+      <Suspense fallback={<div style={{ position: 'fixed', inset: 0, background: '#030711' }} />}>
+        <WeatherGlobe
+          weatherData={data}
+          onGlobeClick={handleGlobeClick}
+          flyToLocation={flyToLocation}
+          gridData={gridData}
+          overlayMode={overlayMode}
+          previewData={previewSnap}
+          selectedCity={selectedCity}
+        />
 
-      <WeatherHUD
-        weatherData={data}
-        status={status}
-        onSeed={handleSeed}
-        onSpeedChange={handleSpeedChange}
-        onSearchSelect={handleSearchSelect}
-        locations={locations}
-        overlayMode={overlayMode}
-        onOverlayMode={setOverlayMode}
-        isMobile={isMobile}
-        /* Mobile event + stats extras */
-        gridData={gridData}
-        onStartPlacement={setPlacementMode}
-        placementMode={placementMode}
-      />
+        <WeatherHUD
+          weatherData={data}
+          status={status}
+          onSeed={handleSeed}
+          onSpeedChange={handleSpeedChange}
+          onSearchSelect={handleSearchSelect}
+          locations={locations}
+          overlayMode={overlayMode}
+          onOverlayMode={setOverlayMode}
+          isMobile={isMobile}
+          /* Mobile event + stats extras */
+          gridData={gridData}
+          onStartPlacement={setPlacementMode}
+          placementMode={placementMode}
+        />
 
-      {/* Desktop-only: event panel left side + sim stats bottom-left */}
-      {!isMobile && (
-        <>
-          <EventPanel
-            onStartPlacement={setPlacementMode}
-            placementMode={placementMode}
-            isMobile={false}
-          />
-          <SimStats gridData={gridData} weatherData={data} isMobile={false} />
-        </>
-      )}
+        {/* Desktop-only: event panel left side + sim stats bottom-left */}
+        {!isMobile && (
+          <>
+            <EventPanel
+              onStartPlacement={setPlacementMode}
+              placementMode={placementMode}
+              isMobile={false}
+            />
+            <SimStats gridData={gridData} weatherData={data} isMobile={false} />
+          </>
+        )}
 
-      {/* Forecast / History panel — handles its own mobile/desktop layout */}
-      <ForecastPanel onPreviewSnap={setPreviewSnap} />
+        {/* Forecast / History panel — handles its own mobile/desktop layout */}
+        <ForecastPanel onPreviewSnap={setPreviewSnap} />
 
-      {popup && (
-        <WeatherPopup lat={popup.lat} lon={popup.lon} onClose={() => setPopup(null)} />
-      )}
+        {popup && (
+          <WeatherPopup lat={popup.lat} lon={popup.lon} onClose={() => setPopup(null)} />
+        )}
+      </Suspense>
 
       {/* Placement mode hint banner */}
       {placementMode && (
@@ -211,4 +214,3 @@ export default function App() {
     </div>
   )
 }
-
