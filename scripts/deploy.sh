@@ -7,6 +7,9 @@ cd "$repo_root"
 domain="${DOMAIN:-simulation.micutu.com}"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 
+echo "==> Running preflight"
+scripts/preflight.sh
+
 echo "==> Running checks"
 make check
 

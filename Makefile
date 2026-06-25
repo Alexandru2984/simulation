@@ -4,11 +4,14 @@ BACKEND_BUILD_DIR ?= backend/build
 CMAKE_BUILD_TYPE ?= Release
 NPM ?= npm
 
-.PHONY: all check security-audit backend-configure backend-build backend-test frontend-install frontend-audit frontend-lint frontend-build clean
+.PHONY: all check preflight security-audit backend-configure backend-build backend-test frontend-install frontend-audit frontend-lint frontend-build clean
 
 all: check
 
 check: backend-test frontend-audit frontend-lint frontend-build
+
+preflight:
+	scripts/preflight.sh
 
 security-audit:
 	scripts/security-audit.sh

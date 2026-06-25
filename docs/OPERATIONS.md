@@ -3,10 +3,14 @@
 ## Local Checks
 
 ```bash
+make preflight
 make check
 make security-audit
 ```
 
+`make preflight` verifies the repository is clean for deploy, required runtime
+secrets are present without printing their values, deploy assets exist, and host
+commands are available.
 `make check` runs backend configure/build/tests and frontend audit/lint/build.
 `make security-audit` checks tracked secret patterns, runtime exposure, systemd
 hardening, live headers, Cloudflare origin guard, API mutation controls, frontend
@@ -29,7 +33,9 @@ cd /home/micu/simulation
 scripts/deploy.sh
 ```
 
-The script runs `make check`, builds backend/frontend, backs up live systemd and Nginx config, validates Nginx and logrotate, restarts the backend, reloads Nginx, then runs smoke tests.
+The script runs preflight checks, `make check`, builds backend/frontend, backs up
+live systemd and Nginx config, validates Nginx and logrotate, restarts the
+backend, reloads Nginx, then runs smoke tests.
 
 ## Deploy Frontend
 
