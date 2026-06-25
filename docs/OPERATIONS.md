@@ -46,6 +46,22 @@ sudo nginx -t
 sudo systemctl reload nginx.service
 ```
 
+## Cloudflare Origin Guard
+
+The HTTPS vhost rejects requests that do not arrive from Cloudflare IP ranges.
+After changing Nginx or Cloudflare real-IP config, verify both paths:
+
+```bash
+curl -fsS -D - -o /dev/null https://simulation.micutu.com/
+origin_ip="$(ip -4 route get 1.1.1.1 | awk '{print $7; exit}')"
+curl -k -sS -o /dev/null -w '%{http_code}\n' \
+  --resolve "simulation.micutu.com:443:${origin_ip}" \
+  https://simulation.micutu.com/
+```
+
+The normal Cloudflare path should return `200`; the direct-origin request should
+return `403`.
+
 ## Apply systemd Unit
 
 ```bash
