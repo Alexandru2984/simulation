@@ -15,7 +15,7 @@ const GLASS = {
   border: '1px solid rgba(255,255,255,0.08)',
 }
 
-export default function EventPanel({ onStartPlacement, placementMode, isMobile }) {
+export default function EventPanel({ onStartPlacement, isMobile }) {
   const [expanded, setExpanded] = useState(false)
   const [selected, setSelected] = useState(null)
 

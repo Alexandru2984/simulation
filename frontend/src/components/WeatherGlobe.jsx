@@ -242,7 +242,7 @@ export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation,
     el.style.left    = left + 'px'
     el.style.top     = top  + 'px'
     el.style.display = 'block'
-  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <>
@@ -321,4 +321,3 @@ export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation,
     </>
   )
 }
-

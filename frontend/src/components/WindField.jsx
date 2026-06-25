@@ -1,6 +1,5 @@
 // WindField — renders animated wind arrows at each 36×72 grid point
 import { useRef, useMemo, useEffect } from 'react'
-import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
 const ROWS = 36, COLS = 72
@@ -54,8 +53,6 @@ export default function WindField({ gridData }) {
   const dummy    = useMemo(() => new THREE.Object3D(), [])
   const up       = useMemo(() => new THREE.Vector3(0, 1, 0), [])
   const quat     = useMemo(() => new THREE.Quaternion(), [])
-  const axis     = useMemo(() => new THREE.Vector3(), [])
-
   useEffect(() => {
     if (!gridData || !meshRef.current) return
     const { U, V } = gridData

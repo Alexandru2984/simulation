@@ -1,9 +1,6 @@
-import { useMemo, useRef } from 'react'
 import { Html } from '@react-three/drei'
-import * as THREE from 'three'
 import { latLonToVec3, GLOBE_RADIUS } from '../utils/geoUtils'
 
-const STORM_ICONS = ['🌀', '🌪️', '⛈️']
 const INTENSITY_LABEL = (anom) => {
   if (anom < -20) return 'Cat 4+'
   if (anom < -15) return 'Cat 3'
@@ -12,12 +9,12 @@ const INTENSITY_LABEL = (anom) => {
   return 'TD'
 }
 
-export default function StormLabels({ storms = [], camera }) {
+export default function StormLabels({ storms = [] }) {
   if (!storms || storms.length === 0) return null
 
   return (
     <>
-      {storms.slice(0, 8).map((storm, i) => {
+      {storms.slice(0, 8).map((storm) => {
         const pos = latLonToVec3(storm.lat, storm.lon, GLOBE_RADIUS + 0.05)
         const key = `${storm.lat.toFixed(1)}_${storm.lon.toFixed(1)}`
 

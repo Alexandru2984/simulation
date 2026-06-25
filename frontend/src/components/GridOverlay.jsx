@@ -69,7 +69,6 @@ function stormColor(sp) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function GridOverlay({ gridData, mode = 'temp' }) {
-  const texRef  = useRef(null)
   const meshRef = useRef(null)
 
   const TEX_W = 360, TEX_H = 180
@@ -107,7 +106,7 @@ export default function GridOverlay({ gridData, mode = 'temp' }) {
         }
 
         const base = (ty * TEX_W + tx) * 4
-        let rgb, alpha = 160
+        let rgb, alpha
 
         if (mode === 'temp') {
           rgb = tempColor(mix(T)); alpha = 140

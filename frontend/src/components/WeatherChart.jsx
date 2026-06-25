@@ -1,6 +1,6 @@
 import {
   ResponsiveContainer, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine,
+  XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 
 export default function WeatherChart({ data, dataKey, color, label, unit, domain }) {

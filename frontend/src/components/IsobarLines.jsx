@@ -2,7 +2,7 @@
 // Only rendered when the 'pressure' overlay is active.
 import { useMemo } from 'react'
 import * as THREE from 'three'
-import { GLOBE_RADIUS, sampleGrid } from '../utils/geoUtils'
+import { GLOBE_RADIUS } from '../utils/geoUtils'
 
 const ROWS = 36, COLS = 72
 const LAT0 = -87.5, LON0 = -177.5, STEP = 5
@@ -113,7 +113,7 @@ export default function IsobarLines({ gridData, active }) {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
     geo.setAttribute('color',    new THREE.Float32BufferAttribute(col, 3))
     return geo
-  }, [gridData?.P, active])
+  }, [gridData, active])
 
   if (!geometry) return null
 

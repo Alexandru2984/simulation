@@ -96,7 +96,7 @@ export default function ForecastPanel({ onPreviewSnap }) {
       })
       const data = await res.json()
       setForecastData(Array.isArray(data) ? data : [])
-    } catch (_) {
+    } catch {
       setForecastData([])
     } finally {
       setLoading(false)
@@ -110,7 +110,7 @@ export default function ForecastPanel({ onPreviewSnap }) {
       const data = await res.json()
       setHistoryData(Array.isArray(data) ? data : [])
       setHistoryIdx(0)
-    } catch (_) {
+    } catch {
       setHistoryData([])
     } finally {
       setLoading(false)

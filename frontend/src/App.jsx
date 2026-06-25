@@ -70,7 +70,9 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lat, lon }),
       })
-    } catch (_) {}
+    } catch {
+      // Keep location changes responsive even if seeding fails.
+    }
   }, [])
 
 
@@ -87,7 +89,9 @@ export default function App() {
           showToast(`${EVENT_LABELS[placementMode]} injected at ${lat.toFixed(1)}°, ${lon.toFixed(1)}°`, '#a855f7')
           setFlyToLocation({ lat, lon })
         }
-      } catch (_) {}
+      } catch {
+        // Placement mode is cleared below; failed injections are non-fatal.
+      }
       setPlacementMode(null)
       return
     }
@@ -207,5 +211,4 @@ export default function App() {
     </div>
   )
 }
-
 

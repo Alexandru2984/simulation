@@ -18,7 +18,9 @@ export function useWeatherSocket() {
     }
     ws.onerror = () => ws.close()
     ws.onmessage = (e) => {
-      try { setData(JSON.parse(e.data)) } catch (_) {}
+      try { setData(JSON.parse(e.data)) } catch {
+        // Ignore malformed websocket frames.
+      }
     }
   }, [])
 

@@ -1,7 +1,7 @@
 import { useRef, useMemo, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
-import { sampleGrid, latLonToVec3, vec3ToLatLon, GLOBE_RADIUS } from '../utils/geoUtils'
+import { sampleGrid, GLOBE_RADIUS } from '../utils/geoUtils'
 import { useFPS } from '../hooks/useFPS'
 
 const N = 20000        // particle count (reduced from 30k for mobile perf)
@@ -70,7 +70,7 @@ export default function WindParticles({ gridData }) {
       let lat = lats[i], lon = lons[i]
 
       // Sample U/V from grid (bilinear), or use gentle default when no data
-      let U = 0, V = 0
+      let U, V
       if (g?.U && g?.V) {
         U = sampleGrid(lat, lon, g.U)
         V = sampleGrid(lat, lon, g.V)

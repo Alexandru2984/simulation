@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 const WS_URL = (() => {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
@@ -11,7 +11,7 @@ export function useGridSocket() {
   const wsRef   = useRef(null)
   const retryRef = useRef(null)
 
-  const connect = () => {
+  const connect = useCallback(() => {
     const ws = new WebSocket(WS_URL)
     wsRef.current = ws
 
@@ -22,9 +22,11 @@ export function useGridSocket() {
     }
     ws.onerror   = () => ws.close()
     ws.onmessage = (e) => {
-      try { setData(JSON.parse(e.data)) } catch (_) {}
+      try { setData(JSON.parse(e.data)) } catch {
+        // Ignore malformed websocket frames.
+      }
     }
-  }
+  }, [])
 
   useEffect(() => {
     connect()
@@ -32,7 +34,7 @@ export function useGridSocket() {
       clearTimeout(retryRef.current)
       wsRef.current?.close()
     }
-  }, [])
+  }, [connect])
 
   return { data, status }
 }

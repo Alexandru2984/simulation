@@ -63,7 +63,7 @@ function LightningBolt({ storm }) {
     obj.visible   = false
     obj.renderOrder = 10
     return obj
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   // Dispose geometry/material when the component unmounts
   useEffect(() => {
