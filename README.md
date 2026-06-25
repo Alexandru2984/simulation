@@ -139,6 +139,8 @@ Frontal boundaries are detected via temperature gradient anomalies above thresho
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/api/weather` | Current point weather (temperature, pressure, wind) |
+| `GET` | `/api/healthz` | Liveness check for load balancers and uptime monitors |
+| `GET` | `/api/readyz` | Readiness check; returns 503 until simulation threads have ticked |
 | `GET` | `/api/grid/state` | Full 36×72 grid JSON (T, P, U, V, H, R, SP, storms, fronts) |
 | `POST` | `/api/grid/inject` | Inject weather event `{type, lat, lon, intensity}` |
 | `POST` | `/api/grid/forecast` | Run N steps ahead, return snapshots |
@@ -224,6 +226,7 @@ simulation/
 │       ├── main.cc              — Drogon app bootstrap, OWM assimilation scheduler
 │       ├── GridSim.h / .cc      — Physics engine (36×72 grid, 10 Hz loop)
 │       ├── GridController.h/.cc — REST + WebSocket handlers for grid
+│       ├── HealthController.h/.cc — liveness/readiness endpoints
 │       ├── WeatherSim.h / .cc   — Point weather simulation
 │       ├── WeatherController.h/.cc
 │       ├── WeatherProxy.h / .cc — OWM API proxy

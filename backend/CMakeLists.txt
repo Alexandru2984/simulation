@@ -11,6 +11,7 @@ add_executable(weather_backend
     src/WeatherSim.cc
     src/WeatherController.cc
     src/SeedController.cc
+    src/HealthController.cc
     src/GridSim.cc
     src/GridController.cc
     src/WeatherProxy.cc
