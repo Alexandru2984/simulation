@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <functional>
 #include <string>
+#include <string_view>
 
 namespace Security {
 
@@ -46,12 +47,25 @@ inline bool hasAllowedOrigin(const drogon::HttpRequestPtr& req) {
     return origin.empty() || origin == allowedOrigin();
 }
 
+inline bool hasJsonContentType(const drogon::HttpRequestPtr& req) {
+    const auto contentType = req->getHeader("Content-Type");
+    constexpr std::string_view expected = "application/json";
+    return contentType.size() >= expected.size() &&
+           contentType.compare(0, expected.size(), expected) == 0;
+}
+
 inline bool requireMutationAccess(
     const drogon::HttpRequestPtr& req,
     const std::function<void(const drogon::HttpResponsePtr&)>& cb) {
     const auto origin = req->getHeader("Origin");
     if (origin != allowedOrigin()) {
         cb(json("{\"error\":\"forbidden origin\"}", drogon::k403Forbidden));
+        return false;
+    }
+
+    if (!hasJsonContentType(req)) {
+        cb(json("{\"error\":\"content type must be application/json\"}",
+                drogon::k415UnsupportedMediaType));
         return false;
     }
 

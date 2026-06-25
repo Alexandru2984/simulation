@@ -162,6 +162,15 @@ Frontal boundaries are detected via temperature gradient anomalies above thresho
   "lat": 40.0, "lon": -74.0, "intensity": 1.0 }
 ```
 
+### Mutation Protection
+
+Mutating endpoints require:
+- `Origin: https://simulation.micutu.com`
+- `Content-Type: application/json`
+- `X-Simulation-Token` only when `SIM_MUTATION_TOKEN` is set in the backend environment
+
+The origin and content-type checks reduce accidental cross-site and malformed writes. Set `SIM_MUTATION_TOKEN` when the mutation surface should be restricted beyond the public UI.
+
 ---
 
 ## 🚀 Setup & Deployment
