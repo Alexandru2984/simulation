@@ -13,4 +13,3 @@ frontend/.npm-cache/
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
-Makefile
