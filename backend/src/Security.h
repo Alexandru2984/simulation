@@ -49,7 +49,8 @@ inline bool hasAllowedOrigin(const drogon::HttpRequestPtr& req) {
 inline bool requireMutationAccess(
     const drogon::HttpRequestPtr& req,
     const std::function<void(const drogon::HttpResponsePtr&)>& cb) {
-    if (!hasAllowedOrigin(req)) {
+    const auto origin = req->getHeader("Origin");
+    if (origin != allowedOrigin()) {
         cb(json("{\"error\":\"forbidden origin\"}", drogon::k403Forbidden));
         return false;
     }
