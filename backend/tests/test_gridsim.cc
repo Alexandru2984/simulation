@@ -271,6 +271,34 @@ TEST(simtime_increases) {
     require(t1 > t0, "simTime must increase after physics steps");
 }
 
+TEST(simtime_advances_dt_per_step) {
+    // Regression: speed used to scale both the step count and the simTime
+    // increment; each step must advance simTime by exactly dt.
+    GridSim& sim = GridSim::instance();
+    sim.setSpeed(2.0f);
+    float t0 = sim.simTime();
+    runSteps(10);
+    float t1 = sim.simTime();
+    sim.setSpeed(1.0f);
+    require(std::abs((t1 - t0) - 10 * 0.05f) < 1e-3f,
+            "each step must advance simTime by dt regardless of speed");
+}
+
+TEST(steps_for_tick_accumulator) {
+    float accum = 0.0f;
+    int total = 0;
+    for (int i = 0; i < 10; i++) total += GridSim::stepsForTick(1.0f, accum);
+    require(total == 10, "speed 1 must run 1 step per tick");
+
+    accum = 0.0f; total = 0;
+    for (int i = 0; i < 4; i++) total += GridSim::stepsForTick(2.5f, accum);
+    require(total == 10, "speed 2.5 must average 2.5 steps per tick");
+
+    accum = 0.0f; total = 0;
+    for (int i = 0; i < 10; i++) total += GridSim::stepsForTick(0.5f, accum);
+    require(total == 5, "speed 0.5 must run a step every other tick");
+}
+
 int main() {
     printf("\n=== GridSim Unit Tests ===\n\n");
 
@@ -290,6 +318,8 @@ int main() {
 
     // Phase 1: new physics features
     RUN(simtime_increases);
+    RUN(simtime_advances_dt_per_step);
+    RUN(steps_for_tick_accumulator);
     RUN(fronts_in_json);
     RUN(storm_potential_non_negative);
     RUN(tornado_inject_extreme_wind);

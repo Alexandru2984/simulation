@@ -51,6 +51,15 @@ void GridSim::setSpeed(float s) {
     speed_.store(std::max(0.5f, std::min(50.0f, s)));
 }
 
+// Speed scales the number of fixed-dt steps per tick; simTime advances by dt
+// inside step(), so the multiplier is applied exactly once.
+int GridSim::stepsForTick(float speed, float& accum) {
+    accum += std::max(0.0f, speed);
+    int steps = static_cast<int>(accum);
+    accum -= static_cast<float>(steps);
+    return steps;
+}
+
 // ── Pure physics step (static) ────────────────────────────────────────────────
 // No member state; safe to call from getForecast() on a copy.
 std::array<GridSim::Cell, GridSim::SIZE> GridSim::physicsStep(
@@ -160,7 +169,7 @@ void GridSim::step(float dt) {
     std::lock_guard<std::mutex> lk(mutex_);
     grid_ = physicsStep(grid_, simTime_, dt);
     drainNudges();
-    simTime_ += dt * speed_.load();
+    simTime_ += dt;
     tick_++;
 }
 
@@ -307,7 +316,7 @@ void GridSim::loop() {
     while (running_.load()) {
         auto t0 = clock::now();
 
-        int steps = std::max(1, static_cast<int>(speed_.load()));
+        int steps = stepsForTick(speed_.load(), stepAccum_);
         for (int i = 0; i < steps; i++) step(DT);
 
         // Record history snapshot every 30 ticks (~3 real seconds)

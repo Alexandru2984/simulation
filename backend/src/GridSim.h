@@ -66,6 +66,10 @@ public:
     void runTestSteps(int steps);
 #endif
 
+    // Steps to run this tick for a given speed multiplier. Fractional speeds
+    // carry the remainder in `accum` (e.g. 0.5x runs a step every other tick).
+    static int stepsForTick(float speed, float& accum);
+
     // Helper geometry — static so physicsStep can use them without an instance
     static float cellLat(int r) { return -87.5f + r * 5.0f; }
     static float cellLon(int c) { return -177.5f + c * 5.0f; }
@@ -99,6 +103,7 @@ private:
     std::atomic<long long> tick_{0};
 
     float simTime_{0.0f};
+    float stepAccum_{0.0f};   // fractional-step carry for the loop (sim thread only)
 
     // Zonal mean pressure per row (updated each step, used for storm detection)
     std::array<float, ROWS> zonalMeanP_{};
