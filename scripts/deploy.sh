@@ -25,6 +25,7 @@ sudo cp /etc/systemd/system/weather-backend.service "/etc/systemd/system/weather
 sudo cp /etc/nginx/sites-enabled/simulation.micutu.com "/etc/nginx/backups/simulation.micutu.com.bak-${stamp}"
 
 echo "==> Installing service and web server config"
+install -d state
 sudo cp deploy/weather-backend.service /etc/systemd/system/weather-backend.service
 sudo cp deploy/nginx/snippets/simulation-security-headers.conf /etc/nginx/snippets/simulation-security-headers.conf
 sudo cp deploy/nginx/simulation.micutu.com.conf /etc/nginx/sites-enabled/simulation.micutu.com

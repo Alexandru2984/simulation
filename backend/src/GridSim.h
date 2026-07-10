@@ -62,6 +62,12 @@ public:
     // Hard injection (user events) — directly modifies grid for immediate visual effect
     void inject(float lat, float lon, EventType type, float intensity = 1.0f);
 
+    // Snapshot persistence — atomic write (tmp + rename); load validates the
+    // header, rejects non-finite values, and clamps to physical bounds.
+    // Both return false on any I/O or format error.
+    bool saveState(const std::string& path) const;
+    bool loadState(const std::string& path);
+
 #ifdef GRID_SIM_TESTING
     void runTestSteps(int steps);
 #endif

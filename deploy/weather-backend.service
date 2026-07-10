@@ -26,6 +26,7 @@ PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/home/micu/simulation/logs
+ReadWritePaths=-/home/micu/simulation/state
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true

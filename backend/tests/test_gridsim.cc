@@ -3,10 +3,13 @@
 #include <cmath>
 #include <cassert>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <algorithm>
 #include <numeric>
 #include <stdexcept>
+#include <vector>
 
 static int passed = 0, failed = 0;
 
@@ -299,6 +302,81 @@ TEST(steps_for_tick_accumulator) {
     require(total == 5, "speed 0.5 must run a step every other tick");
 }
 
+// ── Snapshot persistence tests ────────────────────────────────────────────────
+
+static std::string tmpSnapPath(const char* name) {
+    return (std::filesystem::temp_directory_path() / name).string();
+}
+
+TEST(state_snapshot_roundtrip) {
+    GridSim& sim = GridSim::instance();
+    sim.inject(10.0f, 20.0f, GridSim::EventType::HEAT_DOME, 2.0f);
+    // A few physics steps re-apply the simulation's own bounds — inject can
+    // briefly exceed them and loadState clamps, which would break exactness.
+    runSteps(5);
+    auto before  = sim.getGrid();
+    float tBefore = sim.simTime();
+
+    const std::string path = tmpSnapPath("gridsim_roundtrip.snapshot");
+    require(sim.saveState(path), "saveState must succeed");
+
+    runSteps(30);  // diverge from the saved state
+    require(sim.loadState(path), "loadState must succeed");
+    std::remove(path.c_str());
+
+    require(std::abs(sim.simTime() - tBefore) < 1e-6f, "simTime must be restored");
+    auto after = sim.getGrid();
+    for (int i = 0; i < GridSim::SIZE; i++) {
+        require(before[i].T == after[i].T && before[i].P == after[i].P &&
+                before[i].U == after[i].U && before[i].H == after[i].H,
+                "grid cells must match exactly after roundtrip");
+    }
+}
+
+TEST(state_snapshot_rejects_garbage) {
+    const std::string path = tmpSnapPath("gridsim_garbage.snapshot");
+    { std::ofstream out(path, std::ios::binary); out << "this is not a snapshot"; }
+    require(!GridSim::instance().loadState(path), "garbage file must be rejected");
+    std::remove(path.c_str());
+    require(!GridSim::instance().loadState(tmpSnapPath("gridsim_missing.snapshot")),
+            "missing file must be rejected");
+}
+
+TEST(state_snapshot_rejects_truncated) {
+    GridSim& sim = GridSim::instance();
+    const std::string path = tmpSnapPath("gridsim_trunc.snapshot");
+    require(sim.saveState(path), "saveState must succeed");
+
+    std::vector<char> head(1000);
+    std::streamsize got;
+    {
+        std::ifstream in(path, std::ios::binary);
+        in.read(head.data(), head.size());
+        got = in.gcount();
+    }
+    { std::ofstream out(path, std::ios::binary | std::ios::trunc);
+      out.write(head.data(), got); }
+
+    require(!sim.loadState(path), "truncated file must be rejected");
+    std::remove(path.c_str());
+}
+
+TEST(state_snapshot_rejects_wrong_dims) {
+    GridSim& sim = GridSim::instance();
+    const std::string path = tmpSnapPath("gridsim_dims.snapshot");
+    require(sim.saveState(path), "saveState must succeed");
+
+    // Corrupt the rows field (offset: 4 magic + 4 version)
+    {
+        std::fstream f(path, std::ios::binary | std::ios::in | std::ios::out);
+        f.seekp(8);
+        const int32_t badRows = 99;
+        f.write(reinterpret_cast<const char*>(&badRows), sizeof(badRows));
+    }
+    require(!sim.loadState(path), "snapshot with wrong dimensions must be rejected");
+    std::remove(path.c_str());
+}
+
 int main() {
     printf("\n=== GridSim Unit Tests ===\n\n");
 
@@ -329,6 +407,12 @@ int main() {
     RUN(history_has_required_fields);
     RUN(forecast_returns_snapshots);
     RUN(forecast_snapshot_fields);
+
+    // Snapshot persistence
+    RUN(state_snapshot_roundtrip);
+    RUN(state_snapshot_rejects_garbage);
+    RUN(state_snapshot_rejects_truncated);
+    RUN(state_snapshot_rejects_wrong_dims);
 
     printf("\n=== %d passed, %d failed ===\n\n", passed, failed);
     return failed > 0 ? 1 : 0;

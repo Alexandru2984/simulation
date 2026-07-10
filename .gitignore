@@ -5,6 +5,7 @@ dist/
 *.env
 .env
 logs/
+state/
 backend/build/
 frontend/dist/
 frontend/.npm-cache/

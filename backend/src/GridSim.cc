@@ -2,6 +2,10 @@
 #include <cmath>
 #include <chrono>
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
 #include <sstream>
 #include <iomanip>
 
@@ -305,6 +309,100 @@ void GridSim::inject(float lat, float lon, EventType type, float intensity) {
             }
         }
     }
+}
+
+// ── Snapshot persistence ──────────────────────────────────────────────────────
+// Layout: magic "GSNP", u32 version, i32 rows, i32 cols, f32 simTime, i64 tick,
+// then ROWS×COLS Cell records (6 floats each). Host byte order — snapshots only
+// ever move between restarts on the same machine.
+namespace {
+constexpr char     SNAP_MAGIC[4] = {'G', 'S', 'N', 'P'};
+constexpr uint32_t SNAP_VERSION  = 1;
+}
+
+static_assert(sizeof(GridSim::Cell) == 6 * sizeof(float),
+              "Cell must stay tightly packed for snapshot I/O");
+
+bool GridSim::saveState(const std::string& path) const {
+    std::array<Cell, SIZE> g;
+    float simTime;
+    int64_t tick;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        g       = grid_;
+        simTime = simTime_;
+        tick    = tick_.load();
+    }
+
+    const std::string tmp = path + ".tmp";
+    {
+        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        if (!out) return false;
+        const int32_t rows = ROWS, cols = COLS;
+        out.write(SNAP_MAGIC, sizeof(SNAP_MAGIC));
+        out.write(reinterpret_cast<const char*>(&SNAP_VERSION), sizeof(SNAP_VERSION));
+        out.write(reinterpret_cast<const char*>(&rows), sizeof(rows));
+        out.write(reinterpret_cast<const char*>(&cols), sizeof(cols));
+        out.write(reinterpret_cast<const char*>(&simTime), sizeof(simTime));
+        out.write(reinterpret_cast<const char*>(&tick), sizeof(tick));
+        out.write(reinterpret_cast<const char*>(g.data()), sizeof(g));
+        out.flush();
+        if (!out) { std::remove(tmp.c_str()); return false; }
+    }
+    if (std::rename(tmp.c_str(), path.c_str()) != 0) {
+        std::remove(tmp.c_str());
+        return false;
+    }
+    return true;
+}
+
+bool GridSim::loadState(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return false;
+
+    char magic[4] = {};
+    uint32_t version = 0;
+    int32_t rows = 0, cols = 0;
+    float simTime = 0.0f;
+    int64_t tick = 0;
+    std::array<Cell, SIZE> g;
+
+    in.read(magic, sizeof(magic));
+    in.read(reinterpret_cast<char*>(&version), sizeof(version));
+    in.read(reinterpret_cast<char*>(&rows), sizeof(rows));
+    in.read(reinterpret_cast<char*>(&cols), sizeof(cols));
+    in.read(reinterpret_cast<char*>(&simTime), sizeof(simTime));
+    in.read(reinterpret_cast<char*>(&tick), sizeof(tick));
+    in.read(reinterpret_cast<char*>(g.data()), sizeof(g));
+    if (!in || in.gcount() != static_cast<std::streamsize>(sizeof(g))) return false;
+    if (in.peek() != std::char_traits<char>::eof()) return false;  // trailing bytes
+
+    if (std::memcmp(magic, SNAP_MAGIC, sizeof(SNAP_MAGIC)) != 0) return false;
+    if (version != SNAP_VERSION || rows != ROWS || cols != COLS) return false;
+    if (!std::isfinite(simTime) || simTime < 0.0f || tick < 0) return false;
+    for (const Cell& c : g) {
+        if (!std::isfinite(c.T) || !std::isfinite(c.P) || !std::isfinite(c.U) ||
+            !std::isfinite(c.V) || !std::isfinite(c.H) || !std::isfinite(c.R))
+            return false;
+    }
+
+    // Clamp to the same physical bounds the simulation enforces. The wind
+    // check needs a rounding margin: physicsStep's own renormalisation can
+    // leave speeds a few ULP above 70, and those must load back bit-exact.
+    for (Cell& c : g) {
+        c.T = std::clamp(c.T, -80.0f, 60.0f);
+        c.P = std::clamp(c.P, 940.0f, 1060.0f);
+        const float spd = std::sqrt(c.U * c.U + c.V * c.V);
+        if (spd > 70.7f) { c.U *= 70.0f / spd; c.V *= 70.0f / spd; }
+        c.H = std::clamp(c.H, 0.0f, 1.0f);
+        c.R = std::max(0.0f, c.R);
+    }
+
+    std::lock_guard<std::mutex> lk(mutex_);
+    grid_    = g;
+    simTime_ = simTime;
+    tick_.store(tick);
+    return true;
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────

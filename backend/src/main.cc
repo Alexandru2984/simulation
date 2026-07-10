@@ -1,4 +1,5 @@
 #include <drogon/drogon.h>
+#include <cstdlib>
 #include "WeatherSim.h"
 #include "WeatherController.h"
 #include "SeedController.h"
@@ -7,6 +8,16 @@
 #include "WeatherProxy.h"
 
 void broadcastWeather();
+
+// Grid snapshot location — the systemd unit grants write access to state/
+static const std::string& statePath() {
+    static const std::string path = [] {
+        const char* env = std::getenv("SIM_STATE_FILE");
+        return std::string(env && *env ? env
+                                       : "/home/micu/simulation/state/grid.snapshot");
+    }();
+    return path;
+}
 
 // 20 cities spread across the globe for data assimilation
 static const struct { float lat, lon; } ASSIM_CITIES[] = {
@@ -55,6 +66,9 @@ static void scheduleAssimilation() {
 }
 
 int main() {
+    if (GridSim::instance().loadState(statePath()))
+        LOG_INFO << "Restored grid state from " << statePath();
+
     WeatherSim::instance().start();
     GridSim::instance().start();
 
@@ -71,11 +85,15 @@ int main() {
     app.getLoop()->runEvery(300.0, []() { scheduleAssimilation(); });
     // Also run once at startup (after a short delay)
     app.getLoop()->runAfter(5.0, []() { scheduleAssimilation(); });
+    // Persist grid state every minute so restarts resume where they left off
+    app.getLoop()->runEvery(60.0, []() { GridSim::instance().saveState(statePath()); });
 
     LOG_INFO << "Weather Simulation Backend starting on 127.0.0.1:8094";
     app.run();
 
     WeatherSim::instance().stop();
     GridSim::instance().stop();
+    if (!GridSim::instance().saveState(statePath()))
+        LOG_WARN << "Failed to save grid state to " << statePath();
     return 0;
 }
