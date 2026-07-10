@@ -365,6 +365,47 @@ TEST(state_snapshot_rejects_wrong_dims) {
     std::remove(path.c_str());
 }
 
+TEST(history_snapshot_roundtrip) {
+    GridSim& sim = GridSim::instance();
+    runSteps(90);  // ensure several history entries exist
+    std::string before = sim.getHistory(120);
+    require(before != "[]", "history must be non-empty before save");
+
+    const std::string path = tmpSnapPath("gridsim_hist.snapshot");
+    require(sim.saveHistory(path), "saveHistory must succeed");
+
+    runSteps(90);  // history diverges
+    require(sim.getHistory(120) != before, "history must have changed");
+    require(sim.loadHistory(path), "loadHistory must succeed");
+    std::remove(path.c_str());
+
+    require(sim.getHistory(120) == before,
+            "history JSON must be identical after roundtrip");
+}
+
+TEST(history_snapshot_rejects_garbage) {
+    const std::string path = tmpSnapPath("gridsim_hist_garbage.snapshot");
+    { std::ofstream out(path, std::ios::binary); out << "not a history file"; }
+    require(!GridSim::instance().loadHistory(path), "garbage history must be rejected");
+    std::remove(path.c_str());
+}
+
+TEST(history_snapshot_rejects_bad_count) {
+    GridSim& sim = GridSim::instance();
+    const std::string path = tmpSnapPath("gridsim_hist_count.snapshot");
+    require(sim.saveHistory(path), "saveHistory must succeed");
+
+    // Corrupt the count field (offset: 4 magic + 4 version + 4 rows + 4 cols)
+    {
+        std::fstream f(path, std::ios::binary | std::ios::in | std::ios::out);
+        f.seekp(16);
+        const int32_t badCount = 9999;
+        f.write(reinterpret_cast<const char*>(&badCount), sizeof(badCount));
+    }
+    require(!sim.loadHistory(path), "history with absurd count must be rejected");
+    std::remove(path.c_str());
+}
+
 int main() {
     printf("\n=== GridSim Unit Tests ===\n\n");
 
@@ -401,6 +442,9 @@ int main() {
     RUN(state_snapshot_rejects_garbage);
     RUN(state_snapshot_rejects_truncated);
     RUN(state_snapshot_rejects_wrong_dims);
+    RUN(history_snapshot_roundtrip);
+    RUN(history_snapshot_rejects_garbage);
+    RUN(history_snapshot_rejects_bad_count);
 
     printf("\n=== %d passed, %d failed ===\n\n", passed, failed);
     return failed > 0 ? 1 : 0;

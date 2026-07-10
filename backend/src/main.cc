@@ -10,12 +10,21 @@
 
 void broadcastWeather();
 
-// Grid snapshot location — the systemd unit grants write access to state/
+// Snapshot locations — the systemd unit grants write access to state/
 static const std::string& statePath() {
     static const std::string path = [] {
         const char* env = std::getenv("SIM_STATE_FILE");
         return std::string(env && *env ? env
                                        : "/home/micu/simulation/state/grid.snapshot");
+    }();
+    return path;
+}
+
+static const std::string& historyPath() {
+    static const std::string path = [] {
+        const char* env = std::getenv("SIM_HISTORY_FILE");
+        return std::string(env && *env ? env
+                                       : "/home/micu/simulation/state/history.snapshot");
     }();
     return path;
 }
@@ -69,6 +78,8 @@ static void scheduleAssimilation() {
 int main() {
     if (GridSim::instance().loadState(statePath()))
         LOG_INFO << "Restored grid state from " << statePath();
+    if (GridSim::instance().loadHistory(historyPath()))
+        LOG_INFO << "Restored grid history from " << historyPath();
 
     WeatherSim::instance().start();
     GridSim::instance().start();
@@ -107,5 +118,7 @@ int main() {
     GridSim::instance().stop();
     if (!GridSim::instance().saveState(statePath()))
         LOG_WARN << "Failed to save grid state to " << statePath();
+    if (!GridSim::instance().saveHistory(historyPath()))
+        LOG_WARN << "Failed to save grid history to " << historyPath();
     return 0;
 }

@@ -68,6 +68,11 @@ public:
     bool saveState(const std::string& path) const;
     bool loadState(const std::string& path);
 
+    // History ring buffer persistence (same atomic-write/validate contract);
+    // saved on clean shutdown so the Time Navigator survives deploys.
+    bool saveHistory(const std::string& path) const;
+    bool loadHistory(const std::string& path);
+
 #ifdef GRID_SIM_TESTING
     void runTestSteps(int steps);
 #endif
@@ -92,6 +97,7 @@ private:
     void initGrid();
     void drainNudges();
     void recordHistory();
+    std::vector<Snapshot> copyHistory(int limit) const;  // -1 = all
 
     // Pure physics step — operates on an external grid copy, no member-state side effects.
     // Nudges are NOT applied here (only in the live step() path).

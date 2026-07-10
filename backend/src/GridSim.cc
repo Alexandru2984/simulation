@@ -405,6 +405,85 @@ bool GridSim::loadState(const std::string& path) {
     return true;
 }
 
+// ── History persistence ───────────────────────────────────────────────────────
+// Layout: magic "GHIS", u32 version, i32 rows, i32 cols, i32 count, then
+// `count` entries of (i64 step, f32 simTime, ROWS×COLS Cell records),
+// oldest first. Same host-only, atomic-write contract as the grid snapshot.
+namespace {
+constexpr char     HIST_MAGIC[4] = {'G', 'H', 'I', 'S'};
+constexpr uint32_t HIST_VERSION  = 1;
+}
+
+bool GridSim::saveHistory(const std::string& path) const {
+    const auto snaps = copyHistory(-1);
+
+    const std::string tmp = path + ".tmp";
+    {
+        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        if (!out) return false;
+        const int32_t rows = ROWS, cols = COLS;
+        const int32_t count = static_cast<int32_t>(snaps.size());
+        out.write(HIST_MAGIC, sizeof(HIST_MAGIC));
+        out.write(reinterpret_cast<const char*>(&HIST_VERSION), sizeof(HIST_VERSION));
+        out.write(reinterpret_cast<const char*>(&rows), sizeof(rows));
+        out.write(reinterpret_cast<const char*>(&cols), sizeof(cols));
+        out.write(reinterpret_cast<const char*>(&count), sizeof(count));
+        for (const Snapshot& s : snaps) {
+            const int64_t step = s.step;
+            out.write(reinterpret_cast<const char*>(&step), sizeof(step));
+            out.write(reinterpret_cast<const char*>(&s.simTime), sizeof(s.simTime));
+            out.write(reinterpret_cast<const char*>(s.grid.data()), sizeof(s.grid));
+        }
+        out.flush();
+        if (!out) { std::remove(tmp.c_str()); return false; }
+    }
+    if (std::rename(tmp.c_str(), path.c_str()) != 0) {
+        std::remove(tmp.c_str());
+        return false;
+    }
+    return true;
+}
+
+bool GridSim::loadHistory(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return false;
+
+    char magic[4] = {};
+    uint32_t version = 0;
+    int32_t rows = 0, cols = 0, count = 0;
+    in.read(magic, sizeof(magic));
+    in.read(reinterpret_cast<char*>(&version), sizeof(version));
+    in.read(reinterpret_cast<char*>(&rows), sizeof(rows));
+    in.read(reinterpret_cast<char*>(&cols), sizeof(cols));
+    in.read(reinterpret_cast<char*>(&count), sizeof(count));
+    if (!in) return false;
+    if (std::memcmp(magic, HIST_MAGIC, sizeof(HIST_MAGIC)) != 0) return false;
+    if (version != HIST_VERSION || rows != ROWS || cols != COLS) return false;
+    if (count < 0 || count > HISTORY_CAP) return false;
+
+    std::vector<Snapshot> snaps(count);
+    for (int n = 0; n < count; n++) {
+        int64_t step = -1;
+        in.read(reinterpret_cast<char*>(&step), sizeof(step));
+        in.read(reinterpret_cast<char*>(&snaps[n].simTime), sizeof(snaps[n].simTime));
+        in.read(reinterpret_cast<char*>(snaps[n].grid.data()), sizeof(snaps[n].grid));
+        if (!in || step < 0 || !std::isfinite(snaps[n].simTime)) return false;
+        snaps[n].step = step;
+        for (const Cell& c : snaps[n].grid) {
+            if (!std::isfinite(c.T) || !std::isfinite(c.P) || !std::isfinite(c.U) ||
+                !std::isfinite(c.V) || !std::isfinite(c.H) || !std::isfinite(c.R))
+                return false;
+        }
+    }
+    if (in.peek() != std::char_traits<char>::eof()) return false;  // trailing bytes
+
+    std::lock_guard<std::mutex> lk(histMtx_);
+    for (int n = 0; n < count; n++) history_[n] = snaps[n];
+    histHead_  = count % HISTORY_CAP;
+    histCount_ = count;
+    return true;
+}
+
 // ── Main loop ─────────────────────────────────────────────────────────────────
 void GridSim::loop() {
     using clock = std::chrono::steady_clock;
@@ -524,23 +603,31 @@ std::string GridSim::getForecast(int steps) const {
 }
 
 // ── History retrieval ─────────────────────────────────────────────────────────
+// Oldest-first copy of the last `limit` snapshots (all of them for limit < 0).
+std::vector<GridSim::Snapshot> GridSim::copyHistory(int limit) const {
+    std::vector<Snapshot> snaps;
+    std::lock_guard<std::mutex> lk(histMtx_);
+    int count = (limit < 0) ? histCount_ : std::min(limit, histCount_);
+    int startIdx = ((histHead_ - count) % HISTORY_CAP + HISTORY_CAP) % HISTORY_CAP;
+    snaps.reserve(count);
+    for (int n = 0; n < count; n++)
+        snaps.push_back(history_[(startIdx + n) % HISTORY_CAP]);
+    return snaps;
+}
+
 std::string GridSim::getHistory(int limit) const {
     limit = std::max(1, std::min(limit, HISTORY_CAP));
 
-    std::lock_guard<std::mutex> lk(histMtx_);
-    if (histCount_ == 0) return "[]";
-
-    // Walk backward from most recent (histHead_-1) to oldest within limit
-    int count   = std::min(limit, histCount_);
-    // Start from oldest of the `count` we'll return
-    int startIdx = ((histHead_ - count) % HISTORY_CAP + HISTORY_CAP) % HISTORY_CAP;
+    // Copy under lock, serialize outside — the sim thread records history
+    // every 30 ticks and must not wait behind ~7 MB of string building.
+    const auto snaps = copyHistory(limit);
+    if (snaps.empty()) return "[]";
 
     std::ostringstream os;
     os << std::fixed << std::setprecision(1);
     os << '[';
-    for (int n = 0; n < count; n++) {
-        int i = (startIdx + n) % HISTORY_CAP;
-        const Snapshot& snap = history_[i];
+    for (std::size_t n = 0; n < snaps.size(); n++) {
+        const Snapshot& snap = snaps[n];
         if (n > 0) os << ',';
         os << "{\"step\":" << snap.step
            << ",\"simTime\":" << snap.simTime
