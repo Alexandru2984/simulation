@@ -171,7 +171,7 @@ void SeedController::seedWeather(
 // ── /api/weather/locations ────────────────────────────────────────────────────
 
 void SeedController::getLocations(
-    const drogon::HttpRequestPtr& req,
+    const drogon::HttpRequestPtr&,
     std::function<void(const drogon::HttpResponsePtr&)>&& cb)
 {
     Json::Value list(Json::arrayValue);

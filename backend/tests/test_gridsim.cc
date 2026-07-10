@@ -224,7 +224,7 @@ TEST(fronts_detected_after_inject) {
 TEST(history_accumulates) {
     GridSim& sim = GridSim::instance();
     // Run enough ticks that recordHistory() fires at least once (every 30 ticks)
-    auto g = runSteps(60);
+    runSteps(60);
     std::string hist = sim.getHistory(10);
     require(hist != "[]", "History should not be empty after 60 physics ticks");
     require(hist.front() == '[' && hist.back() == ']', "History must be a JSON array");
