@@ -132,7 +132,7 @@ else
     fail "public site did not return 200 through Cloudflare"
 fi
 
-for header in strict-transport-security content-security-policy x-frame-options x-content-type-options referrer-policy permissions-policy; do
+for header in strict-transport-security content-security-policy x-frame-options x-content-type-options referrer-policy permissions-policy cross-origin-opener-policy cross-origin-resource-policy; do
     if printf '%s\n' "$headers" | rg -qi "^${header}:"; then
         pass "header present: ${header}"
     else

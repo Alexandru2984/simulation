@@ -56,6 +56,17 @@ curl -fsS "https://${domain}/api/version" | rg '"gitSha":'
 echo
 curl -fsS -D - -o /dev/null "https://${domain}/" | rg -i '^(strict-transport-security|content-security-policy|x-frame-options):'
 
+ws_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 --http1.1 \
+    -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+    -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==' \
+    -H "Origin: https://${domain}" "https://${domain}/ws/weather" || true)"
+if [[ "$ws_status" == "101" ]]; then
+    echo "WebSocket handshake OK (101)"
+else
+    echo "WebSocket handshake FAILED (${ws_status})" >&2
+    exit 1
+fi
+
 echo "==> Deploy complete"
 echo "Backups:"
 echo "  /etc/systemd/system/weather-backend.service.bak-${stamp}"
