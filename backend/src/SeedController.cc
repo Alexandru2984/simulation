@@ -1,4 +1,5 @@
 #include "SeedController.h"
+#include "GridSim.h"
 #include "Security.h"
 #include <drogon/HttpClient.h>
 #include <cstdlib>
@@ -221,7 +222,10 @@ void SeedController::setSpeed(
     double value = (*j)["value"].asDouble();
     value = std::max(0.1, std::min(100.0, value));
 
+    // Drive both sims — the HUD readout and the grid the globe renders.
+    // GridSim applies its own 0.5–50 clamp on top.
     WeatherSim::instance().setSpeed(value);
+    GridSim::instance().setSpeed(static_cast<float>(value));
 
     Json::Value out;
     out["status"] = "ok";
