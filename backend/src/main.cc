@@ -6,6 +6,7 @@
 #include "GridSim.h"
 #include "GridController.h"
 #include "WeatherProxy.h"
+#include "SdNotify.h"
 
 void broadcastWeather();
 
@@ -87,6 +88,17 @@ int main() {
     app.getLoop()->runAfter(5.0, []() { scheduleAssimilation(); });
     // Persist grid state every minute so restarts resume where they left off
     app.getLoop()->runEvery(60.0, []() { GridSim::instance().saveState(statePath()); });
+
+    // systemd supervision: signal readiness, then ping the watchdog from the
+    // event loop — a hung loop stops the pings and systemd restarts us.
+    app.registerBeginningAdvice([]() {
+        SdNotify::ready();
+        const double wd = SdNotify::watchdogIntervalSeconds();
+        if (wd > 0.0) {
+            drogon::app().getLoop()->runEvery(std::max(1.0, wd / 3.0),
+                                              []() { SdNotify::watchdog(); });
+        }
+    });
 
     LOG_INFO << "Weather Simulation Backend starting on 127.0.0.1:8094";
     app.run();

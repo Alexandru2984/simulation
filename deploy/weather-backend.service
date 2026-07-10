@@ -5,7 +5,10 @@ Wants=network-online.target
 Documentation=https://simulation.micutu.com
 
 [Service]
-Type=simple
+# The binary signals READY=1 and pings WATCHDOG=1 from its event loop
+# (see src/SdNotify.h) — a hung-but-alive process gets restarted too.
+Type=notify
+WatchdogSec=30
 User=micu
 Group=micu
 WorkingDirectory=/home/micu/simulation/backend/build
