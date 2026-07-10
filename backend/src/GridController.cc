@@ -87,12 +87,13 @@ void GridWsController::handleNewMessage(
     const drogon::WebSocketMessageType&) {}
 
 void GridWsController::broadcastGrid() {
-    std::string json = GridSim::instance().getStateJson();
     std::vector<drogon::WebSocketConnectionPtr> clients;
     {
         std::lock_guard<std::mutex> lk(wsGridMtx);
+        if (wsGridClients.empty()) return;
         clients.assign(wsGridClients.begin(), wsGridClients.end());
     }
+    std::string json = GridSim::instance().getStateJson();
     for (auto& conn : clients)
         conn->send(json);
 }

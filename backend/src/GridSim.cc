@@ -463,8 +463,16 @@ std::string GridSim::getHistory(int limit) const {
 
 // ── JSON state output ─────────────────────────────────────────────────────────
 std::string GridSim::getStateJson() const {
-    std::lock_guard<std::mutex> lk(mutex_);
-    const auto& g = grid_;
+    // Copy under lock, serialize outside — same pattern as getForecast().
+    std::array<Cell, SIZE> g;
+    float simTime;
+    long long tick;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        g       = grid_;
+        simTime = simTime_;
+        tick    = tick_.load();
+    }
 
     // ── Zonal means for anomaly-based detection ──
     std::array<float, ROWS> zonalP{}, zonalT{};
@@ -575,10 +583,10 @@ std::string GridSim::getStateJson() const {
     };
 
     os << '{'
-       << "\"tick\":"     << tick_.load()  << ','
+       << "\"tick\":"     << tick          << ','
        << "\"cols\":"     << COLS          << ','
        << "\"rows\":"     << ROWS          << ','
-       << "\"simTime\":"  << simTime_      << ','
+       << "\"simTime\":"  << simTime       << ','
        << "\"avgT\":"     << avgT          << ','
        << "\"avgWind\":"  << avgWind       << ','
        << "\"avgPrecip\":" << avgPrecip    << ',';

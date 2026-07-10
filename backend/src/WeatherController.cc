@@ -79,16 +79,17 @@ void WeatherWsController::handleConnectionClosed(
 // Registered as a recurring timer in main.cc
 
 void broadcastWeather() {
+    std::vector<drogon::WebSocketConnectionPtr> clients;
+    {
+        std::lock_guard<std::mutex> lk(ws_mtx);
+        if (ws_clients.empty()) return;
+        clients.assign(ws_clients.begin(), ws_clients.end());
+    }
+
     auto s = WeatherSim::instance().current();
     Json::FastWriter fw;
     std::string msg = fw.write(stateToJson(s));
     msg.erase(msg.find_last_not_of("\n") + 1); // trim trailing newline
-
-    std::vector<drogon::WebSocketConnectionPtr> clients;
-    {
-        std::lock_guard<std::mutex> lk(ws_mtx);
-        clients.assign(ws_clients.begin(), ws_clients.end());
-    }
     for (auto& c : clients) {
         if (c->connected())
             c->send(msg);

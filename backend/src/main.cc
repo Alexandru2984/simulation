@@ -22,12 +22,14 @@ static void scheduleAssimilation() {
     const auto& key = WeatherProxy::apiKey();
     if (key.empty()) return;
 
+    // One client for all cities — sendRequest keeps it alive across rounds
+    static auto client = drogon::HttpClient::newHttpClient("https://api.openweathermap.org");
+
     for (auto& city : ASSIM_CITIES) {
         std::ostringstream path;
         path << "/data/2.5/weather?lat=" << city.lat << "&lon=" << city.lon
              << "&appid=" << key << "&units=metric";
 
-        auto client = drogon::HttpClient::newHttpClient("https://api.openweathermap.org");
         auto req    = drogon::HttpRequest::newHttpRequest();
         req->setMethod(drogon::Get);
         req->setPath(path.str());
