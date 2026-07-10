@@ -5,8 +5,23 @@
 #include <functional>
 #include <string>
 #include <string_view>
+#include "RateLimiter.h"
 
 namespace Security {
+
+// ── Pure checks (unit-testable without drogon request objects) ───────────────
+
+// Strict origin check used for mutations: the header must equal the allowed
+// origin exactly — absent or foreign origins are rejected.
+inline bool originAllowed(std::string_view origin, std::string_view allowed) {
+    return origin == allowed;
+}
+
+inline bool isJsonContentType(std::string_view contentType) {
+    constexpr std::string_view expected = "application/json";
+    return contentType.size() >= expected.size() &&
+           contentType.compare(0, expected.size(), expected) == 0;
+}
 
 inline const std::string& allowedOrigin() {
     static const std::string origin = [] {
@@ -48,17 +63,14 @@ inline bool hasAllowedOrigin(const drogon::HttpRequestPtr& req) {
 }
 
 inline bool hasJsonContentType(const drogon::HttpRequestPtr& req) {
-    const auto contentType = req->getHeader("Content-Type");
-    constexpr std::string_view expected = "application/json";
-    return contentType.size() >= expected.size() &&
-           contentType.compare(0, expected.size(), expected) == 0;
+    return isJsonContentType(req->getHeader("Content-Type"));
 }
 
 inline bool requireJsonPostAccess(
     const drogon::HttpRequestPtr& req,
     const std::function<void(const drogon::HttpResponsePtr&)>& cb) {
     const auto origin = req->getHeader("Origin");
-    if (origin != allowedOrigin()) {
+    if (!originAllowed(origin, allowedOrigin())) {
         cb(json("{\"error\":\"forbidden origin\"}", drogon::k403Forbidden));
         return false;
     }
@@ -74,12 +86,19 @@ inline bool requireJsonPostAccess(
 
 inline bool requireMutationAccess(
     const drogon::HttpRequestPtr& req,
-    const std::function<void(const drogon::HttpResponsePtr&)>& cb) {
+    const std::function<void(const drogon::HttpResponsePtr&)>& cb,
+    RateLimiter* limiter = nullptr) {
     if (!requireJsonPostAccess(req, cb)) return false;
 
     const auto& token = mutationToken();
     if (!token.empty() && req->getHeader("X-Simulation-Token") != token) {
         cb(json("{\"error\":\"unauthorized\"}", drogon::k401Unauthorized));
+        return false;
+    }
+
+    // Global budget checked last so rejected junk doesn't drain tokens
+    if (limiter && !limiter->allow()) {
+        cb(json("{\"error\":\"rate limited\"}", drogon::k429TooManyRequests));
         return false;
     }
 

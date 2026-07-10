@@ -71,7 +71,9 @@ void SeedController::seedWeather(
         cb(r);
         return;
     }
-    if (!Security::requireMutationAccess(req, cb)) return;
+    // Global budget on top of nginx's per-IP limits
+    static RateLimiter seedLimiter(120.0, 20.0);
+    if (!Security::requireMutationAccess(req, cb, &seedLimiter)) return;
 
     auto j = req->jsonObject();
     if (!j) {
@@ -197,7 +199,9 @@ void SeedController::setSpeed(
         cb(r);
         return;
     }
-    if (!Security::requireMutationAccess(req, cb)) return;
+    // Speed changes are global for every viewer — keep the budget tight
+    static RateLimiter speedLimiter(20.0, 6.0);
+    if (!Security::requireMutationAccess(req, cb, &speedLimiter)) return;
 
     auto j = req->jsonObject();
     if (!j) {

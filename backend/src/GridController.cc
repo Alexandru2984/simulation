@@ -26,7 +26,9 @@ void GridRestController::inject(
     std::function<void(const drogon::HttpResponsePtr&)>&& cb)
 {
     if (req->method() == drogon::Options) { cb(jsonResp("{}")); return; }
-    if (!Security::requireMutationAccess(req, cb)) return;
+    // Global budget on top of nginx's per-IP 10 r/m
+    static RateLimiter injectLimiter(60.0, 10.0);
+    if (!Security::requireMutationAccess(req, cb, &injectLimiter)) return;
 
     auto j = req->jsonObject();
     if (!j) { cb(jsonResp("{\"error\":\"invalid json\"}", drogon::k400BadRequest)); return; }
