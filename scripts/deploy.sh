@@ -30,6 +30,8 @@ sudo cp deploy/weather-backend.service /etc/systemd/system/weather-backend.servi
 sudo cp deploy/nginx/snippets/simulation-security-headers.conf /etc/nginx/snippets/simulation-security-headers.conf
 sudo cp deploy/nginx/simulation.micutu.com.conf /etc/nginx/sites-enabled/simulation.micutu.com
 sudo install -m 0644 deploy/logrotate/weather-backend /etc/logrotate.d/weather-backend
+sudo install -m 0644 deploy/weather-metrics.service /etc/systemd/system/weather-metrics.service
+sudo install -m 0644 deploy/weather-metrics.timer /etc/systemd/system/weather-metrics.timer
 
 echo "==> Validating config"
 sudo systemctl daemon-reload
@@ -39,6 +41,7 @@ sudo logrotate -d /etc/logrotate.d/weather-backend >/dev/null
 echo "==> Restarting backend and reloading nginx"
 sudo systemctl restart weather-backend.service
 sudo systemctl reload nginx.service
+sudo systemctl enable --now weather-metrics.timer >/dev/null 2>&1
 
 echo "==> Smoke tests"
 curl -fsS "https://${domain}/api/healthz"

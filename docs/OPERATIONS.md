@@ -127,6 +127,29 @@ with a 1–5 minute interval and email alerts. `/api/readyz` returns 503 until
 the simulation threads tick, so it catches "process up but sim wedged" cases
 that `/api/healthz` would miss.
 
+### Prometheus
+
+`weather-metrics.timer` runs `scripts/export-metrics.sh` every 30 s, writing
+`/var/lib/prometheus/node-exporter/weather_backend.prom`
+(`weather_backend_up`, `_tick`, `_sim_time_seconds`, `_sim_speed`,
+`_ws_clients`, `_uptime_seconds`). The host's node_exporter serves the
+textfile collector via the drop-in installed from
+`deploy/node-exporter/textfile-collector.conf`, so the existing Prometheus
+scraping :9100 picks these up with no extra configuration. Suggested alert
+rule on the Prometheus side:
+
+```yaml
+- alert: WeatherBackendDown
+  expr: weather_backend_up == 0 or absent(weather_backend_up)
+  for: 3m
+  annotations:
+    summary: weather backend on simulation.micutu.com is down or unscraped
+```
+
+`weather_backend_tick` should increase monotonically; `rate() == 0` while
+`weather_backend_up == 1` means the sim thread is wedged (the systemd
+watchdog should catch that first).
+
 ## Grid State Persistence
 
 The backend snapshots the grid to `state/grid.snapshot` every 60 s and on

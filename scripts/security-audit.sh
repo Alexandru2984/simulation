@@ -194,6 +194,31 @@ for method in TRACE PUT DELETE PATCH; do
     [[ "$api_method_status" == "405" ]] && pass "${method} /api/healthz is rejected" || fail "${method} /api/healthz returned ${api_method_status}"
 done
 
+section "Metrics export"
+if systemctl is-active weather-metrics.timer >/dev/null 2>&1; then
+    pass "weather-metrics.timer is active"
+else
+    fail "weather-metrics.timer is not active"
+fi
+
+prom_file="/var/lib/prometheus/node-exporter/weather_backend.prom"
+if [[ -f "$prom_file" ]]; then
+    prom_age=$(( $(date +%s) - $(stat -c %Y "$prom_file") ))
+    if (( prom_age < 120 )); then
+        pass "weather_backend.prom is fresh (${prom_age}s old)"
+    else
+        fail "weather_backend.prom is stale (${prom_age}s old)"
+    fi
+else
+    fail "weather_backend.prom is missing"
+fi
+
+if curl -fsS --max-time 3 http://127.0.0.1:9100/metrics 2>/dev/null | rg -q '^weather_backend_up 1'; then
+    pass "node_exporter serves weather_backend_up 1"
+else
+    fail "node_exporter does not expose weather_backend_up 1"
+fi
+
 section "Dependency and host hygiene"
 if (cd frontend && npm audit --audit-level=moderate >/dev/null); then
     pass "frontend npm audit passes at moderate threshold"

@@ -1,0 +1,12 @@
+[Unit]
+Description=Export weather backend metrics for node_exporter
+Documentation=https://simulation.micutu.com
+
+[Service]
+Type=oneshot
+ExecStart=/home/micu/simulation/scripts/export-metrics.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/prometheus/node-exporter
+ProtectHome=read-only
