@@ -100,6 +100,11 @@ if systemctl show "$service" >/dev/null 2>&1; then
     [[ "$no_new_privs" == "yes" ]] && pass "NoNewPrivileges=yes" || fail "NoNewPrivileges=${no_new_privs}"
     [[ "$umask_value" == "0077" ]] && pass "UMask=0077" || fail "UMask=${umask_value}"
     [[ "$read_write_paths" == *"${repo_root}/logs"* ]] && pass "ReadWritePaths includes ${repo_root}/logs" || fail "ReadWritePaths=${read_write_paths}"
+
+    service_type="$(systemctl show "$service" -P Type)"
+    watchdog_usec="$(systemctl show "$service" -P WatchdogUSec)"
+    [[ "$service_type" == "notify" ]] && pass "Type=notify (watchdog-capable)" || fail "Type=${service_type} (expected notify)"
+    [[ -n "$watchdog_usec" && "$watchdog_usec" != "0" ]] && pass "watchdog enabled (WatchdogUSec=${watchdog_usec})" || fail "watchdog disabled (WatchdogUSec=${watchdog_usec:-unset})"
 else
     fail "systemd service not found: ${service}"
 fi

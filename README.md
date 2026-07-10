@@ -171,6 +171,10 @@ Mutating endpoints require:
 
 The origin and content-type checks reduce accidental cross-site and malformed writes. Set `SIM_MUTATION_TOKEN` when the mutation surface should be restricted beyond the public UI.
 
+On top of nginx's per-IP limits, each mutating endpoint has a global token
+bucket in the backend (inject 60/min, seed 120/min, speed 20/min) and returns
+`429` when exhausted, so distributed clients can't grief the shared world.
+
 ---
 
 ## 🚀 Setup & Deployment
@@ -222,11 +226,15 @@ SIM_MUTATION_TOKEN=change-me
 simulation/
 ├── backend/
 │   ├── CMakeLists.txt
+│   ├── tests/                   — unit tests (gridsim, security, weathersim) via CTest
 │   └── src/
 │       ├── main.cc              — Drogon app bootstrap, OWM assimilation scheduler
-│       ├── GridSim.h / .cc      — Physics engine (36×72 grid, 10 Hz loop)
+│       ├── GridSim.h / .cc      — Physics engine (36×72 grid, 10 Hz loop) + state snapshots
 │       ├── GridController.h/.cc — REST + WebSocket handlers for grid
 │       ├── HealthController.h/.cc — liveness/readiness endpoints
+│       ├── Security.h           — origin / content-type / token checks
+│       ├── RateLimiter.h        — global token buckets for mutating endpoints
+│       ├── SdNotify.h           — systemd READY/WATCHDOG notifications
 │       ├── WeatherSim.h / .cc   — Point weather simulation
 │       ├── WeatherController.h/.cc
 │       ├── WeatherProxy.h / .cc — OWM API proxy
@@ -249,6 +257,7 @@ simulation/
 ├── docs/
 │   └── OPERATIONS.md
 ├── logs/
+├── state/                       — grid snapshot (world survives restarts)
 ├── .env
 ├── .gitignore
 └── README.md
@@ -260,8 +269,9 @@ simulation/
 
 - **Nginx**: HSTS with `preload`, CSP, `X-Frame-Options`, `X-Content-Type-Options`, rate limiting (10 req/s burst 20)
 - **TLS**: TLS 1.2 + 1.3 only (1.0/1.1 disabled)
-- **Backend**: Bound to `127.0.0.1:8094` only (not externally reachable)
+- **Backend**: Bound to `127.0.0.1:8094` only (not externally reachable); global token buckets on mutations
 - **systemd**: deploy template includes `NoNewPrivileges`, `PrivateTmp`, `PrivateDevices`, `ProtectSystem=strict`, `ProtectHome=read-only`, `ReadWritePaths=/home/micu/simulation/logs`, `SystemCallFilter=@system-service`, `CapabilityBoundingSet=` (empty), `UMask=0077`
+- **Supervision**: `Type=notify` + `WatchdogSec=30` — the backend pings the systemd watchdog from its event loop, so hangs restart automatically, not just crashes
 - **Firewall**: UFW active, default DENY, only 22/80/443 open
 
 ---

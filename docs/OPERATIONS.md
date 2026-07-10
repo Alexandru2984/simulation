@@ -103,6 +103,53 @@ curl -sS -D - -o - -X POST \
   https://simulation.micutu.com/api/weather/speed
 ```
 
+## Monitoring and Alerting
+
+The backend runs as `Type=notify` with `WatchdogSec=30`: it signals READY on
+startup and pings the systemd watchdog from its event loop every 10 s. A hung
+event loop therefore triggers an automatic restart even while the process is
+still alive — `Restart=always` alone only covers crashes. Verify with:
+
+```bash
+systemctl show weather-backend.service -p Type -p WatchdogUSec
+journalctl -u weather-backend.service | rg -i watchdog
+```
+
+Nothing on the VPS can alert about the VPS itself being down. Point an
+external uptime monitor (healthchecks.io or UptimeRobot, both have free
+tiers) at:
+
+```
+https://simulation.micutu.com/api/readyz
+```
+
+with a 1–5 minute interval and email alerts. `/api/readyz` returns 503 until
+the simulation threads tick, so it catches "process up but sim wedged" cases
+that `/api/healthz` would miss.
+
+## Grid State Persistence
+
+The backend snapshots the grid to `state/grid.snapshot` every 60 s and on
+clean shutdown, and restores it at startup, so deploys and restarts keep the
+simulated world (override the path with `SIM_STATE_FILE`). Snapshots are
+validated and clamped on load; a corrupt or truncated file is ignored and the
+sim starts fresh. To reset the world deliberately:
+
+```bash
+sudo systemctl stop weather-backend.service
+rm -f /home/micu/simulation/state/grid.snapshot
+sudo systemctl start weather-backend.service
+```
+
+## Mutation Rate Limits
+
+Mutating endpoints are limited twice: per-IP in nginx (`sim_inject` 10 r/m,
+`sim_api` 30 r/m) and globally in the backend via token buckets (inject
+60/min, seed 120/min, speed 20/min → HTTP 429). The global budgets bound
+distributed abuse of the shared world; raise the constants in
+`GridController.cc` / `SeedController.cc` if legitimate traffic ever hits
+them.
+
 ## Rollback
 
 Systemd and Nginx backups should be timestamped before live changes:

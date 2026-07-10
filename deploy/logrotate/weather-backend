@@ -8,3 +8,13 @@
     copytruncate
     su micu micu
 }
+
+/home/micu/simulation/logs/drogon*.log {
+    weekly
+    rotate 4
+    compress
+    missingok
+    notifempty
+    copytruncate
+    su micu micu
+}
