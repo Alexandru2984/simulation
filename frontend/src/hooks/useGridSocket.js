@@ -10,15 +10,22 @@ export function useGridSocket() {
   const [status, setStatus] = useState('connecting')
   const wsRef   = useRef(null)
   const retryRef = useRef(null)
+  const delayRef = useRef(3000)
 
   const connect = useCallback(() => {
     const ws = new WebSocket(WS_URL)
     wsRef.current = ws
 
-    ws.onopen    = () => setStatus('connected')
+    ws.onopen    = () => {
+      delayRef.current = 3000
+      setStatus('connected')
+    }
     ws.onclose   = () => {
       setStatus('reconnecting')
-      retryRef.current = setTimeout(connect, 3000)
+      // Exponential backoff with jitter, capped at 30s
+      const delay = delayRef.current
+      delayRef.current = Math.min(delay * 2, 30000)
+      retryRef.current = setTimeout(connect, delay + Math.random() * 1000)
     }
     ws.onerror   = () => ws.close()
     ws.onmessage = (e) => {
