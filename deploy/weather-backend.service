@@ -3,6 +3,11 @@ Description=Weather Simulation Backend (Drogon C++)
 After=network-online.target
 Wants=network-online.target
 Documentation=https://simulation.micutu.com
+# A sustained crashloop (or repeated watchdog kills) stops the restarts and
+# fires the email alert; deploys reset the counter via reset-failed.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+OnFailure=weather-backend-alert.service
 
 [Service]
 # The binary signals READY=1 and pings WATCHDOG=1 from its event loop

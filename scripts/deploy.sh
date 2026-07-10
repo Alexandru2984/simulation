@@ -32,6 +32,7 @@ sudo cp deploy/nginx/simulation.micutu.com.conf /etc/nginx/sites-enabled/simulat
 sudo install -m 0644 deploy/logrotate/weather-backend /etc/logrotate.d/weather-backend
 sudo install -m 0644 deploy/weather-metrics.service /etc/systemd/system/weather-metrics.service
 sudo install -m 0644 deploy/weather-metrics.timer /etc/systemd/system/weather-metrics.timer
+sudo install -m 0644 deploy/weather-backend-alert.service /etc/systemd/system/weather-backend-alert.service
 
 echo "==> Validating config"
 sudo systemctl daemon-reload
@@ -39,6 +40,7 @@ sudo nginx -t
 sudo logrotate -d /etc/logrotate.d/weather-backend >/dev/null
 
 echo "==> Restarting backend and reloading nginx"
+sudo systemctl reset-failed weather-backend.service 2>/dev/null || true
 sudo systemctl restart weather-backend.service
 sudo systemctl reload nginx.service
 sudo systemctl enable --now weather-metrics.timer >/dev/null 2>&1

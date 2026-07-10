@@ -1,0 +1,9 @@
+[Unit]
+Description=Email alert for weather backend failure
+
+[Service]
+Type=oneshot
+EnvironmentFile=/home/micu/simulation/.env
+ExecStart=/home/micu/simulation/scripts/alert-mail.sh weather-backend.service
+NoNewPrivileges=true
+PrivateTmp=true

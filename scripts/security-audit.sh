@@ -105,6 +105,9 @@ if systemctl show "$service" >/dev/null 2>&1; then
     watchdog_usec="$(systemctl show "$service" -P WatchdogUSec)"
     [[ "$service_type" == "notify" ]] && pass "Type=notify (watchdog-capable)" || fail "Type=${service_type} (expected notify)"
     [[ -n "$watchdog_usec" && "$watchdog_usec" != "0" ]] && pass "watchdog enabled (WatchdogUSec=${watchdog_usec})" || fail "watchdog disabled (WatchdogUSec=${watchdog_usec:-unset})"
+
+    on_failure="$(systemctl show "$service" -P OnFailure)"
+    [[ "$on_failure" == *"weather-backend-alert.service"* ]] && pass "OnFailure alert unit wired" || fail "OnFailure=${on_failure:-unset} (expected weather-backend-alert.service)"
 else
     fail "systemd service not found: ${service}"
 fi

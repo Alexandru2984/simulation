@@ -127,6 +127,25 @@ with a 1–5 minute interval and email alerts. `/api/readyz` returns 503 until
 the simulation threads tick, so it catches "process up but sim wedged" cases
 that `/api/healthz` would miss.
 
+### Email on Failure
+
+`weather-backend.service` carries `StartLimitIntervalSec=300` /
+`StartLimitBurst=10` and `OnFailure=weather-backend-alert.service`. A
+sustained crashloop (or repeated watchdog kills) exhausts the start limit,
+systemd stops restarting, and the alert unit mails `ALERT_EMAIL` (from
+`.env`) through the local mailcow on `localhost:25`. After fixing the cause:
+
+```bash
+sudo systemctl reset-failed weather-backend.service
+sudo systemctl start weather-backend.service
+```
+
+Test the mail path any time with:
+
+```bash
+sudo systemctl start weather-backend-alert.service
+```
+
 ### Prometheus
 
 `weather-metrics.timer` runs `scripts/export-metrics.sh` every 30 s, writing
