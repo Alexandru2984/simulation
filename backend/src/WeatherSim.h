@@ -28,6 +28,7 @@ public:
 
     // Simulation speed multiplier (1x = real-time, 10x = 10s per tick)
     void setSpeed(double multiplier);
+    double speed() const { return speed_.load(); }
 
 private:
     WeatherSim();

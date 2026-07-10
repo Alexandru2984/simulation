@@ -45,6 +45,8 @@ add_executable(weather_backend
 )
 
 # ── Unit tests ────────────────────────────────────────────────────────────────
+enable_testing()
+
 add_executable(test_gridsim
     src/GridSim.cc
     tests/test_gridsim.cc
@@ -52,6 +54,21 @@ add_executable(test_gridsim
 target_link_libraries(test_gridsim PRIVATE Drogon::Drogon)
 target_include_directories(test_gridsim PRIVATE src)
 target_compile_definitions(test_gridsim PRIVATE GRID_SIM_TESTING)
+
+add_executable(test_security tests/test_security.cc)
+target_link_libraries(test_security PRIVATE Drogon::Drogon)
+target_include_directories(test_security PRIVATE src)
+
+add_executable(test_weathersim
+    src/WeatherSim.cc
+    tests/test_weathersim.cc
+)
+target_link_libraries(test_weathersim PRIVATE Drogon::Drogon)
+target_include_directories(test_weathersim PRIVATE src)
+
+add_test(NAME gridsim    COMMAND test_gridsim)
+add_test(NAME security   COMMAND test_security)
+add_test(NAME weathersim COMMAND test_weathersim)
 
 target_link_libraries(weather_backend PRIVATE Drogon::Drogon)
 target_include_directories(weather_backend PRIVATE src)

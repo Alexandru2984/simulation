@@ -1,0 +1,86 @@
+// Unit tests for the Security helpers and the global rate limiter
+#include "Security.h"
+#include "RateLimiter.h"
+#include "test_framework.h"
+
+// ── Content type ──────────────────────────────────────────────────────────────
+
+TEST(json_content_type_accepted) {
+    require(Security::isJsonContentType("application/json"),
+            "plain application/json must pass");
+    require(Security::isJsonContentType("application/json; charset=utf-8"),
+            "json with charset parameter must pass");
+}
+
+TEST(non_json_content_type_rejected) {
+    require(!Security::isJsonContentType(""), "empty content type must fail");
+    require(!Security::isJsonContentType("text/plain"), "text/plain must fail");
+    require(!Security::isJsonContentType("application/jso"), "truncated type must fail");
+    require(!Security::isJsonContentType("json"), "bare json must fail");
+    require(!Security::isJsonContentType("text/json"), "text/json must fail");
+}
+
+// ── Origin ────────────────────────────────────────────────────────────────────
+
+TEST(strict_origin_match) {
+    const char* allowed = "https://simulation.micutu.com";
+    require(Security::originAllowed(allowed, allowed), "exact origin must pass");
+    require(!Security::originAllowed("", allowed), "missing origin must fail");
+    require(!Security::originAllowed("https://evil.example", allowed),
+            "foreign origin must fail");
+    require(!Security::originAllowed("https://simulation.micutu.com.evil.example",
+                                     allowed),
+            "prefix-spoofed origin must fail");
+    require(!Security::originAllowed("http://simulation.micutu.com", allowed),
+            "http downgrade origin must fail");
+}
+
+// ── Rate limiter ──────────────────────────────────────────────────────────────
+
+TEST(limiter_allows_burst_then_blocks) {
+    RateLimiter lim(60.0, 5.0);
+    for (int i = 0; i < 5; i++)
+        require(lim.allowAt(100.0), "burst request must be allowed");
+    require(!lim.allowAt(100.0), "request beyond burst must be blocked");
+}
+
+TEST(limiter_refills_over_time) {
+    RateLimiter lim(60.0, 5.0);  // 1 token/s
+    for (int i = 0; i < 5; i++) lim.allowAt(100.0);
+    require(!lim.allowAt(100.0), "bucket must start empty after burst");
+    require(lim.allowAt(101.05), "one token must be back after ~1s");
+    require(!lim.allowAt(101.05), "only one token must have refilled");
+    require(lim.allowAt(200.0), "long idle must refill the bucket");
+}
+
+TEST(limiter_caps_refill_at_burst) {
+    RateLimiter lim(600.0, 3.0);
+    lim.allowAt(0.0);
+    // Hours of idle must not accumulate more than the burst
+    require(lim.allowAt(10000.0), "token 1 after idle");
+    require(lim.allowAt(10000.0), "token 2 after idle");
+    require(lim.allowAt(10000.0), "token 3 after idle");
+    require(!lim.allowAt(10000.0), "burst cap must hold after long idle");
+}
+
+TEST(limiter_tolerates_time_going_backwards) {
+    RateLimiter lim(60.0, 2.0);
+    require(lim.allowAt(100.0), "first request must pass");
+    require(lim.allowAt(50.0), "older timestamp must not break the limiter");
+    require(!lim.allowAt(50.0), "bucket must be empty after two");
+}
+
+int main() {
+    printf("\n=== Security Unit Tests ===\n\n");
+
+    RUN(json_content_type_accepted);
+    RUN(non_json_content_type_rejected);
+    RUN(strict_origin_match);
+    RUN(limiter_allows_burst_then_blocks);
+    RUN(limiter_refills_over_time);
+    RUN(limiter_caps_refill_at_burst);
+    RUN(limiter_tolerates_time_going_backwards);
+
+    printf("\n=== %d passed, %d failed ===\n\n", passed, failed);
+    return failed > 0 ? 1 : 0;
+}

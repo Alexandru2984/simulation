@@ -23,8 +23,8 @@ backend-build: backend-configure
 	cmake --build $(BACKEND_BUILD_DIR) --target weather_backend -j$$(nproc)
 
 backend-test: backend-configure
-	cmake --build $(BACKEND_BUILD_DIR) --target test_gridsim -j$$(nproc)
-	./$(BACKEND_BUILD_DIR)/test_gridsim
+	cmake --build $(BACKEND_BUILD_DIR) --target test_gridsim test_security test_weathersim -j$$(nproc)
+	cd $(BACKEND_BUILD_DIR) && ctest --output-on-failure
 
 frontend-install:
 	cd frontend && $(NPM) ci
