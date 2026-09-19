@@ -174,9 +174,12 @@ if ! jq -e --arg sha "$expected_sha" '.gitSha == $sha and .gitDirty == false' \
 fi
 
 echo "    public API"
-curl -fsS --max-time 8 "https://${domain}/api/healthz" >/dev/null
-curl -fsS --max-time 8 "https://${domain}/api/readyz" >/dev/null
-curl -fsS --max-time 8 "https://${domain}/api/grid" >/dev/null
+for endpoint in /api/healthz /api/readyz /api/grid/state; do
+    if ! curl -fsS --max-time 8 "https://${domain}${endpoint}" >/dev/null; then
+        printf 'Public API verification failed: %s\n' "$endpoint" >&2
+        exit 1
+    fi
+done
 
 echo "    frontend entrypoint and asset"
 index_html="$(curl -fsS --max-time 8 "https://${domain}/")"
