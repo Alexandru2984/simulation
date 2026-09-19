@@ -365,6 +365,36 @@ TEST(state_snapshot_rejects_wrong_dims) {
     std::remove(path.c_str());
 }
 
+TEST(legacy_state_time_advances_past_float_limit) {
+    GridSim& sim = GridSim::instance();
+    const std::string path = tmpSnapPath("gridsim_legacy_time.snapshot");
+    const auto grid = sim.getGrid();
+    const char magic[4] = {'G', 'S', 'N', 'P'};
+    const uint32_t version = 1;
+    const int32_t rows = GridSim::ROWS, cols = GridSim::COLS;
+    const float legacyTime = 1048576.0f;  // 2^20: float + 0.05 no longer advances
+    const int64_t tick = sim.tick();
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out.write(magic, sizeof(magic));
+        out.write(reinterpret_cast<const char*>(&version), sizeof(version));
+        out.write(reinterpret_cast<const char*>(&rows), sizeof(rows));
+        out.write(reinterpret_cast<const char*>(&cols), sizeof(cols));
+        out.write(reinterpret_cast<const char*>(&legacyTime), sizeof(legacyTime));
+        out.write(reinterpret_cast<const char*>(&tick), sizeof(tick));
+        out.write(reinterpret_cast<const char*>(grid.data()), sizeof(grid));
+    }
+
+    require(sim.loadState(path), "version 1 state snapshot must remain readable");
+    std::remove(path.c_str());
+    const double before = sim.simTime();
+    runSteps(1);
+    require(sim.simTime() > before,
+            "simTime must advance past the float precision boundary");
+    require(std::abs((sim.simTime() - before) - 0.05) < 1e-6,
+            "one physics step must still advance model time by 0.05 seconds");
+}
+
 TEST(history_snapshot_roundtrip) {
     GridSim& sim = GridSim::instance();
     runSteps(90);  // ensure several history entries exist
@@ -406,6 +436,33 @@ TEST(history_snapshot_rejects_bad_count) {
     std::remove(path.c_str());
 }
 
+TEST(legacy_history_snapshot_is_readable) {
+    GridSim& sim = GridSim::instance();
+    const std::string path = tmpSnapPath("gridsim_legacy_history.snapshot");
+    const auto grid = sim.getGrid();
+    const char magic[4] = {'G', 'H', 'I', 'S'};
+    const uint32_t version = 1;
+    const int32_t rows = GridSim::ROWS, cols = GridSim::COLS, count = 1;
+    const int64_t step = sim.tick();
+    const float legacyTime = 123.5f;
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out.write(magic, sizeof(magic));
+        out.write(reinterpret_cast<const char*>(&version), sizeof(version));
+        out.write(reinterpret_cast<const char*>(&rows), sizeof(rows));
+        out.write(reinterpret_cast<const char*>(&cols), sizeof(cols));
+        out.write(reinterpret_cast<const char*>(&count), sizeof(count));
+        out.write(reinterpret_cast<const char*>(&step), sizeof(step));
+        out.write(reinterpret_cast<const char*>(&legacyTime), sizeof(legacyTime));
+        out.write(reinterpret_cast<const char*>(grid.data()), sizeof(grid));
+    }
+
+    require(sim.loadHistory(path), "version 1 history snapshot must remain readable");
+    std::remove(path.c_str());
+    require(sim.getHistory(1).find("\"simTime\":123.5") != std::string::npos,
+            "legacy history time must be converted without loss");
+}
+
 int main() {
     printf("\n=== GridSim Unit Tests ===\n\n");
 
@@ -445,6 +502,8 @@ int main() {
     RUN(history_snapshot_roundtrip);
     RUN(history_snapshot_rejects_garbage);
     RUN(history_snapshot_rejects_bad_count);
+    RUN(legacy_history_snapshot_is_readable);
+    RUN(legacy_state_time_advances_past_float_limit);
 
     printf("\n=== %d passed, %d failed ===\n\n", passed, failed);
     return failed > 0 ? 1 : 0;

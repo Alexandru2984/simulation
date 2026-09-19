@@ -68,12 +68,13 @@ int GridSim::stepsForTick(float speed, float& accum) {
 // No member state; safe to call from getForecast() on a copy.
 std::array<GridSim::Cell, GridSim::SIZE> GridSim::physicsStep(
     const std::array<Cell, SIZE>& grid,
-    float simTime, float dt)
+    double simTime, float dt)
 {
     std::array<Cell, SIZE> next = grid;
 
-    float simDay    = 3600.0f;
-    float hourAngle0 = (simTime / simDay) * 2.0f * (float)M_PI;
+    constexpr double simDay = 3600.0;
+    const float hourAngle0 = static_cast<float>(
+        (std::fmod(simTime, simDay) / simDay) * 2.0 * M_PI);
 
     for (int r = 0; r < ROWS; r++) {
         float latDeg = cellLat(r);
@@ -312,12 +313,15 @@ void GridSim::inject(float lat, float lon, EventType type, float intensity) {
 }
 
 // ── Snapshot persistence ──────────────────────────────────────────────────────
-// Layout: magic "GSNP", u32 version, i32 rows, i32 cols, f32 simTime, i64 tick,
+// Version 2 layout: magic "GSNP", u32 version, i32 rows, i32 cols,
+// f64 simTime, i64 tick,
 // then ROWS×COLS Cell records (6 floats each). Host byte order — snapshots only
-// ever move between restarts on the same machine.
+// ever move between restarts on the same machine. The loader also accepts the
+// version 1 layout, which stored simTime as f32.
 namespace {
 constexpr char     SNAP_MAGIC[4] = {'G', 'S', 'N', 'P'};
-constexpr uint32_t SNAP_VERSION  = 1;
+constexpr uint32_t SNAP_VERSION  = 2;
+constexpr uint32_t SNAP_VERSION_LEGACY = 1;
 }
 
 static_assert(sizeof(GridSim::Cell) == 6 * sizeof(float),
@@ -325,7 +329,7 @@ static_assert(sizeof(GridSim::Cell) == 6 * sizeof(float),
 
 bool GridSim::saveState(const std::string& path) const {
     std::array<Cell, SIZE> g;
-    float simTime;
+    double simTime;
     int64_t tick;
     {
         std::lock_guard<std::mutex> lk(mutex_);
@@ -363,7 +367,7 @@ bool GridSim::loadState(const std::string& path) {
     char magic[4] = {};
     uint32_t version = 0;
     int32_t rows = 0, cols = 0;
-    float simTime = 0.0f;
+    double simTime = 0.0;
     int64_t tick = 0;
     std::array<Cell, SIZE> g;
 
@@ -371,15 +375,25 @@ bool GridSim::loadState(const std::string& path) {
     in.read(reinterpret_cast<char*>(&version), sizeof(version));
     in.read(reinterpret_cast<char*>(&rows), sizeof(rows));
     in.read(reinterpret_cast<char*>(&cols), sizeof(cols));
-    in.read(reinterpret_cast<char*>(&simTime), sizeof(simTime));
+    if (!in) return false;
+    if (std::memcmp(magic, SNAP_MAGIC, sizeof(SNAP_MAGIC)) != 0) return false;
+    if ((version != SNAP_VERSION && version != SNAP_VERSION_LEGACY) ||
+        rows != ROWS || cols != COLS)
+        return false;
+
+    if (version == SNAP_VERSION_LEGACY) {
+        float legacySimTime = 0.0f;
+        in.read(reinterpret_cast<char*>(&legacySimTime), sizeof(legacySimTime));
+        simTime = legacySimTime;
+    } else {
+        in.read(reinterpret_cast<char*>(&simTime), sizeof(simTime));
+    }
     in.read(reinterpret_cast<char*>(&tick), sizeof(tick));
     in.read(reinterpret_cast<char*>(g.data()), sizeof(g));
     if (!in || in.gcount() != static_cast<std::streamsize>(sizeof(g))) return false;
     if (in.peek() != std::char_traits<char>::eof()) return false;  // trailing bytes
 
-    if (std::memcmp(magic, SNAP_MAGIC, sizeof(SNAP_MAGIC)) != 0) return false;
-    if (version != SNAP_VERSION || rows != ROWS || cols != COLS) return false;
-    if (!std::isfinite(simTime) || simTime < 0.0f || tick < 0) return false;
+    if (!std::isfinite(simTime) || simTime < 0.0 || tick < 0) return false;
     for (const Cell& c : g) {
         if (!std::isfinite(c.T) || !std::isfinite(c.P) || !std::isfinite(c.U) ||
             !std::isfinite(c.V) || !std::isfinite(c.H) || !std::isfinite(c.R))
@@ -407,11 +421,13 @@ bool GridSim::loadState(const std::string& path) {
 
 // ── History persistence ───────────────────────────────────────────────────────
 // Layout: magic "GHIS", u32 version, i32 rows, i32 cols, i32 count, then
-// `count` entries of (i64 step, f32 simTime, ROWS×COLS Cell records),
-// oldest first. Same host-only, atomic-write contract as the grid snapshot.
+// `count` entries of (i64 step, f64 simTime, ROWS×COLS Cell records),
+// oldest first. Version 1 history files used f32 simTime and remain readable.
+// Same host-only, atomic-write contract as the grid snapshot.
 namespace {
 constexpr char     HIST_MAGIC[4] = {'G', 'H', 'I', 'S'};
-constexpr uint32_t HIST_VERSION  = 1;
+constexpr uint32_t HIST_VERSION  = 2;
+constexpr uint32_t HIST_VERSION_LEGACY = 1;
 }
 
 bool GridSim::saveHistory(const std::string& path) const {
@@ -458,14 +474,22 @@ bool GridSim::loadHistory(const std::string& path) {
     in.read(reinterpret_cast<char*>(&count), sizeof(count));
     if (!in) return false;
     if (std::memcmp(magic, HIST_MAGIC, sizeof(HIST_MAGIC)) != 0) return false;
-    if (version != HIST_VERSION || rows != ROWS || cols != COLS) return false;
+    if ((version != HIST_VERSION && version != HIST_VERSION_LEGACY) ||
+        rows != ROWS || cols != COLS)
+        return false;
     if (count < 0 || count > HISTORY_CAP) return false;
 
     std::vector<Snapshot> snaps(count);
     for (int n = 0; n < count; n++) {
         int64_t step = -1;
         in.read(reinterpret_cast<char*>(&step), sizeof(step));
-        in.read(reinterpret_cast<char*>(&snaps[n].simTime), sizeof(snaps[n].simTime));
+        if (version == HIST_VERSION_LEGACY) {
+            float legacySimTime = 0.0f;
+            in.read(reinterpret_cast<char*>(&legacySimTime), sizeof(legacySimTime));
+            snaps[n].simTime = legacySimTime;
+        } else {
+            in.read(reinterpret_cast<char*>(&snaps[n].simTime), sizeof(snaps[n].simTime));
+        }
         in.read(reinterpret_cast<char*>(snaps[n].grid.data()), sizeof(snaps[n].grid));
         if (!in || step < 0 || !std::isfinite(snaps[n].simTime)) return false;
         snaps[n].step = step;
@@ -538,7 +562,7 @@ std::array<GridSim::Cell, GridSim::SIZE> GridSim::getGrid() const {
     return grid_;
 }
 
-float GridSim::simTime() const {
+double GridSim::simTime() const {
     std::lock_guard<std::mutex> lk(mutex_);
     return simTime_;
 }
@@ -551,7 +575,7 @@ std::string GridSim::getForecast(int steps) const {
 
     // Deep copy under lock
     std::array<Cell, SIZE> g;
-    float st;
+    double st;
     {
         std::lock_guard<std::mutex> lk(mutex_);
         g  = grid_;
@@ -578,7 +602,7 @@ std::string GridSim::getForecast(int steps) const {
 
     for (int s = 1; s <= steps; s++) {
         g   = physicsStep(g, st, DT);
-        st += DT;
+        st += static_cast<double>(DT);
 
         if (s % 10 == 0 || s == steps) {
             os << ",{\"step\":" << s << ",\"simTime\":" << st
@@ -650,7 +674,7 @@ std::string GridSim::getHistory(int limit) const {
 std::string GridSim::getStateJson() const {
     // Copy under lock, serialize outside — same pattern as getForecast().
     std::array<Cell, SIZE> g;
-    float simTime;
+    double simTime;
     long long tick;
     {
         std::lock_guard<std::mutex> lk(mutex_);

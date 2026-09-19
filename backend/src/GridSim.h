@@ -29,7 +29,7 @@ public:
     // Compact simulation snapshot (for history ring buffer and forecast)
     struct Snapshot {
         long long step;
-        float     simTime;
+        double    simTime;
         std::array<Cell, SIZE> grid;
     };
 
@@ -42,7 +42,7 @@ public:
     void stop();
     void setSpeed(float s);
     float speed()   const { return speed_.load(); }
-    float simTime() const;
+    double simTime() const;
 
     std::string getStateJson() const;
     std::array<Cell, SIZE> getGrid() const;
@@ -103,7 +103,7 @@ private:
     // Nudges are NOT applied here (only in the live step() path).
     static std::array<Cell, SIZE> physicsStep(
         const std::array<Cell, SIZE>& cur,
-        float simTime, float dt);
+        double simTime, float dt);
 
     std::array<Cell, SIZE>  grid_;
     std::array<Nudge, SIZE> nudge_;
@@ -114,7 +114,7 @@ private:
     std::atomic<float>     speed_{1.0f};
     std::atomic<long long> tick_{0};
 
-    float simTime_{0.0f};
+    double simTime_{0.0};
     float stepAccum_{0.0f};   // fractional-step carry for the loop (sim thread only)
 
     // Zonal mean pressure per row (updated each step, used for storm detection)
