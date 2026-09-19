@@ -107,7 +107,7 @@ wait_for_ready() {
 check_websocket() {
     local path=$1
     local status
-    status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 --http1.1 \
+    status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 --http1.1 \
         -H 'Connection: Upgrade' \
         -H 'Upgrade: websocket' \
         -H 'Sec-WebSocket-Version: 13' \
