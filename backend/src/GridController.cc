@@ -1,4 +1,5 @@
 #include "GridController.h"
+#include "AssimilationStatus.h"
 #include "GridSim.h"
 #include "RuntimeInfo.h"
 #include "Security.h"
@@ -179,11 +180,17 @@ void GridRestController::getMetrics(
     std::size_t clients;
     { std::lock_guard<std::mutex> lk(wsGridMtx); clients = wsGridClients.size(); }
 
-    char buf[640];
+    const auto& assimilation = AssimilationStatus::instance();
+    char buf[1024];
     snprintf(buf, sizeof(buf),
         "{\"tick\":%lld,\"simTime\":%.1f,\"simSpeed\":%.1f,"
         "\"rows\":%d,\"cols\":%d,\"gridCells\":%d,"
         "\"wsClients\":%zu,\"uptimeSeconds\":%lld,"
+        "\"assimilationLastAttemptUnix\":%lld,"
+        "\"assimilationLastSuccessUnix\":%lld,"
+        "\"assimilationAccepted\":%llu,"
+        "\"assimilationUpstreamFailures\":%llu,"
+        "\"assimilationValidationFailures\":%llu,"
         "\"version\":\"1.0\",\"gitSha\":\"%s\",\"gitDirty\":%s,"
         "\"buildTimeUtc\":\"%s\",\"status\":\"ok\"}",
         (long long)sim.tick(),
@@ -192,6 +199,11 @@ void GridRestController::getMetrics(
         GridSim::ROWS, GridSim::COLS, GridSim::SIZE,
         clients,
         RuntimeInfo::uptimeSeconds(),
+        (long long)assimilation.lastAttemptUnix(),
+        (long long)assimilation.lastSuccessUnix(),
+        (unsigned long long)assimilation.accepted(),
+        (unsigned long long)assimilation.upstreamFailures(),
+        (unsigned long long)assimilation.validationFailures(),
         RuntimeInfo::buildGitSha(),
         RuntimeInfo::buildGitDirtyJson(),
         RuntimeInfo::buildTimeUtc());

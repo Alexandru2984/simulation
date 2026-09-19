@@ -1,6 +1,7 @@
 // Unit tests for the Security helpers and the global rate limiter
 #include "Security.h"
 #include "RateLimiter.h"
+#include "OpenWeatherObservation.h"
 #include "test_framework.h"
 #include <limits>
 
@@ -85,6 +86,44 @@ TEST(finite_ranges_reject_special_values) {
             "negative infinity must fail");
 }
 
+TEST(openweather_observation_validation) {
+    Json::Value json;
+    json["main"]["temp"] = 18.5;
+    json["main"]["pressure"] = 1012.0;
+    json["main"]["humidity"] = 72.0;
+    json["wind"]["speed"] = 4.5;
+    json["wind"]["deg"] = 225.0;
+    json["name"] = "Bucharest";
+
+    OpenWeatherObservation observation;
+    require(parseOpenWeatherObservation(json, observation),
+            "valid OWM observation must parse");
+    require(std::abs(observation.temperature - 18.5) < 1e-9,
+            "temperature must be preserved");
+    require(observation.city == "Bucharest", "bounded city name must be preserved");
+
+    Json::Value missingHumidity = json;
+    missingHumidity["main"].removeMember("humidity");
+    require(!parseOpenWeatherObservation(missingHumidity, observation),
+            "missing humidity must fail");
+
+    Json::Value invalidWind = json;
+    invalidWind["wind"]["speed"] = std::numeric_limits<double>::infinity();
+    require(!parseOpenWeatherObservation(invalidWind, observation),
+            "non-finite wind must fail");
+
+    Json::Value invalidPressure = json;
+    invalidPressure["main"]["pressure"] = 5000.0;
+    require(!parseOpenWeatherObservation(invalidPressure, observation),
+            "out-of-range pressure must fail");
+
+    Json::Value noDirection = json;
+    noDirection["wind"].removeMember("deg");
+    require(parseOpenWeatherObservation(noDirection, observation) &&
+                observation.windDirection == 0.0,
+            "missing wind direction must use the zero-degree fallback");
+}
+
 // ── Rate limiter ──────────────────────────────────────────────────────────────
 
 TEST(limiter_allows_burst_then_blocks) {
@@ -128,6 +167,7 @@ int main() {
     RUN(strict_number_parsing);
     RUN(strict_origin_match);
     RUN(finite_ranges_reject_special_values);
+    RUN(openweather_observation_validation);
     RUN(limiter_allows_burst_then_blocks);
     RUN(limiter_refills_over_time);
     RUN(limiter_caps_refill_at_burst);

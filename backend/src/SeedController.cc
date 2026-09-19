@@ -1,5 +1,6 @@
 #include "SeedController.h"
 #include "GridSim.h"
+#include "OpenWeatherObservation.h"
 #include "Security.h"
 #include <drogon/HttpClient.h>
 #include <cstdlib>
@@ -143,37 +144,22 @@ void SeedController::seedWeather(
             owResp->getStatusCode() == drogon::k200OK &&
             owResp->body().size() <= 64 * 1024)
         {
-            auto json = owResp->getJsonObject();
-            if (json && (*json)["main"]["temp"].isNumeric() &&
-                (*json)["main"]["pressure"].isNumeric() &&
-                (*json)["wind"]["speed"].isNumeric() &&
-                (!(*json)["wind"].isMember("deg") || (*json)["wind"]["deg"].isNumeric())) {
-                double temp     = (*json)["main"]["temp"].asDouble();
-                double pressure = (*json)["main"]["pressure"].asDouble();
-                double wspeed   = (*json)["wind"]["speed"].asDouble();
-                double wdir     = (*json)["wind"].isMember("deg") ?
-                                  (*json)["wind"]["deg"].asDouble() : 0.0;
-                std::string city= (*json)["name"].asString();
-
-                const bool valid = Security::finiteInRange(temp, -100.0, 70.0) &&
-                    Security::finiteInRange(pressure, 800.0, 1200.0) &&
-                    Security::finiteInRange(wspeed, 0.0, 150.0) &&
-                    Security::finiteInRange(wdir, 0.0, 360.0);
-                if (!valid) {
-                    cb(fallbackResponse(true));
-                    return;
-                }
-
-                WeatherSim::instance().seed(temp, pressure, wspeed, wdir);
+            const auto json = owResp->getJsonObject();
+            OpenWeatherObservation observation;
+            if (json && parseOpenWeatherObservation(*json, observation)) {
+                WeatherSim::instance().seed(observation.temperature,
+                                            observation.pressure,
+                                            observation.windSpeed,
+                                            observation.windDirection);
 
                 Json::Value out;
                 out["status"]         = "ok";
                 out["source"]         = "openweather";
-                out["city"]           = city;
-                out["temperature"]    = temp;
-                out["pressure"]       = pressure;
-                out["wind_speed"]     = wspeed;
-                out["wind_direction"] = wdir;
+                out["city"]           = observation.city;
+                out["temperature"]    = observation.temperature;
+                out["pressure"]       = observation.pressure;
+                out["wind_speed"]     = observation.windSpeed;
+                out["wind_direction"] = observation.windDirection;
                 auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
                 corsHeaders(resp);
                 cb(resp);

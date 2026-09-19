@@ -8,6 +8,8 @@
 #include "WeatherProxy.h"
 #include "SdNotify.h"
 #include "Security.h"
+#include "AssimilationStatus.h"
+#include "OpenWeatherObservation.h"
 
 void broadcastWeather();
 
@@ -56,6 +58,7 @@ static void scheduleAssimilation() {
     // Fetch OWM for each city and nudge the GridSim
     const auto& key = WeatherProxy::apiKey();
     if (key.empty()) return;
+    AssimilationStatus::instance().markAttempt();
 
     // One client for all cities — sendRequest keeps it alive across rounds
     static auto client = drogon::HttpClient::newHttpClient("https://api.openweathermap.org");
@@ -72,19 +75,34 @@ static void scheduleAssimilation() {
         float capLat = city.lat, capLon = city.lon;
         client->sendRequest(req, [capLat, capLon](
                 drogon::ReqResult res, const drogon::HttpResponsePtr& resp) {
-            if (res != drogon::ReqResult::Ok || !resp || resp->statusCode() != drogon::k200OK)
+            auto& status = AssimilationStatus::instance();
+            if (res != drogon::ReqResult::Ok || !resp ||
+                resp->statusCode() != drogon::k200OK) {
+                status.recordUpstreamFailure();
                 return;
-            try {
-                auto j = drogon::utils::fromString<Json::Value>(std::string(resp->body()));
-                float T = j["main"]["temp"].asFloat();
-                float P = j["main"]["pressure"].asFloat();
-                float H = j["main"]["humidity"].asFloat() / 100.0f;
-                float U = j["wind"]["speed"].asFloat()
-                          * std::cos((j["wind"]["deg"].asFloat() - 180.0f) * 3.14159f / 180.0f);
-                float V = j["wind"]["speed"].asFloat()
-                          * std::sin((j["wind"]["deg"].asFloat() - 180.0f) * 3.14159f / 180.0f);
-                GridSim::instance().assimilate(capLat, capLon, T, P, U, V, H);
-            } catch (...) {}
+            }
+            if (resp->body().size() > 64 * 1024) {
+                status.recordValidationFailure();
+                return;
+            }
+
+            const auto json = resp->getJsonObject();
+            OpenWeatherObservation observation;
+            if (!json || !parseOpenWeatherObservation(*json, observation)) {
+                status.recordValidationFailure();
+                return;
+            }
+
+            constexpr double PI = 3.14159265358979323846;
+            const double direction = (observation.windDirection - 180.0) * PI / 180.0;
+            const float U = static_cast<float>(observation.windSpeed * std::cos(direction));
+            const float V = static_cast<float>(observation.windSpeed * std::sin(direction));
+            GridSim::instance().assimilate(
+                capLat, capLon,
+                static_cast<float>(observation.temperature),
+                static_cast<float>(observation.pressure), U, V,
+                static_cast<float>(observation.humidity / 100.0));
+            status.recordAccepted();
         }, 10.0);
     }
 }
