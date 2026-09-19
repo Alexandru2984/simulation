@@ -1,40 +1,34 @@
 [Unit]
-Description=Weather Simulation Backend (Drogon C++)
+Description=Weather Simulation C++ backend
+Documentation=https://simulation.micutu.com
 After=network-online.target
 Wants=network-online.target
-Documentation=https://simulation.micutu.com
-# A sustained crashloop (or repeated watchdog kills) stops the restarts and
-# fires the email alert; deploys reset the counter via reset-failed.
 StartLimitIntervalSec=300
 StartLimitBurst=10
 OnFailure=weather-backend-alert.service
 
 [Service]
-# The binary signals READY=1 and pings WATCHDOG=1 from its event loop
-# (see src/SdNotify.h) — a hung-but-alive process gets restarted too.
 Type=notify
 WatchdogSec=30
 User=micu
 Group=micu
-WorkingDirectory=/home/micu/simulation/backend/build
-EnvironmentFile=/home/micu/simulation/.env
+WorkingDirectory=/srv/canary/simulation.micutu.com/project/backend/build
+EnvironmentFile=/etc/simulation/simulation.env
 Environment=SIM_ALLOWED_ORIGIN=https://simulation.micutu.com
-# Optional: when set, mutating endpoints require X-Simulation-Token.
-# Environment=SIM_MUTATION_TOKEN=change-me
-ExecStart=/home/micu/simulation/backend/build/weather_backend
+Environment=SIM_STATE_FILE=/srv/canary/simulation.micutu.com/project/state/grid.snapshot
+Environment=SIM_HISTORY_FILE=/srv/canary/simulation.micutu.com/project/state/history.snapshot
+ExecStart=/srv/canary/simulation.micutu.com/project/backend/build/weather_backend
 Restart=always
 RestartSec=5
-
-StandardOutput=append:/home/micu/simulation/logs/backend.log
-StandardError=append:/home/micu/simulation/logs/backend-error.log
+StandardOutput=append:/srv/canary/simulation.micutu.com/project/logs/backend.log
+StandardError=append:/srv/canary/simulation.micutu.com/project/logs/backend-error.log
+UMask=0077
 
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/micu/simulation/logs
-ReadWritePaths=-/home/micu/simulation/state
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true
@@ -46,15 +40,14 @@ RestrictSUIDSGID=true
 LockPersonality=true
 RemoveIPC=true
 RestrictNamespaces=true
-
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
 CapabilityBoundingSet=
 AmbientCapabilities=
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-
-UMask=0077
+ReadWritePaths=/srv/canary/simulation.micutu.com/project/logs
+ReadWritePaths=/srv/canary/simulation.micutu.com/project/state
 MemoryMax=512M
 CPUQuota=80%
 LimitNOFILE=4096

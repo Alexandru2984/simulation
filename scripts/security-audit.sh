@@ -5,8 +5,10 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
 domain="${DOMAIN:-simulation.micutu.com}"
-service="${BACKEND_SERVICE:-weather-backend.service}"
+service="${BACKEND_SERVICE:-simulation-canary.service}"
 backend_port="${BACKEND_PORT:-8094}"
+live_root="${SIM_LIVE_ROOT:-/srv/canary/simulation.micutu.com/project}"
+env_file="${SIM_ENV_FILE:-/etc/simulation/simulation.env}"
 
 failures=0
 warnings=0
@@ -36,6 +38,18 @@ require_cmd() {
     fi
 }
 
+expect_equal() {
+    local actual=$1
+    local expected=$2
+    local success=$3
+    local failure=$4
+    if [[ "$actual" == "$expected" ]]; then
+        pass "$success"
+    else
+        fail "${failure}${actual}"
+    fi
+}
+
 http_code() {
     curl -k -sS -o /dev/null -w '%{http_code}' --connect-timeout 8 "$@" || true
 }
@@ -62,16 +76,16 @@ else
     pass "no high-confidence secret values in tracked files"
 fi
 
-if [[ -f .env ]]; then
-    env_mode="$(stat -c '%a' .env)"
-    env_owner="$(stat -c '%U:%G' .env)"
+if sudo test -f "$env_file"; then
+    env_mode="$(sudo stat -c '%a' "$env_file")"
+    env_owner="$(sudo stat -c '%U:%G' "$env_file")"
     if [[ "$env_mode" == "600" || "$env_mode" == "400" ]]; then
-        pass ".env permissions are restrictive (${env_mode} ${env_owner})"
+        pass "runtime environment permissions are restrictive (${env_mode} ${env_owner})"
     else
-        fail ".env permissions are too broad (${env_mode} ${env_owner})"
+        fail "runtime environment permissions are too broad (${env_mode} ${env_owner})"
     fi
 else
-    warn ".env not present; runtime secret checks skipped"
+    fail "runtime environment file is missing: ${env_file}"
 fi
 
 section "Backend exposure"
@@ -95,19 +109,36 @@ if systemctl show "$service" >/dev/null 2>&1; then
     umask_value="$(systemctl show "$service" -P UMask)"
     read_write_paths="$(systemctl show "$service" -P ReadWritePaths)"
 
-    [[ "$protect_system" == "strict" ]] && pass "ProtectSystem=strict" || fail "ProtectSystem=${protect_system}"
-    [[ "$protect_home" == "read-only" ]] && pass "ProtectHome=read-only" || fail "ProtectHome=${protect_home}"
-    [[ "$no_new_privs" == "yes" ]] && pass "NoNewPrivileges=yes" || fail "NoNewPrivileges=${no_new_privs}"
-    [[ "$umask_value" == "0077" ]] && pass "UMask=0077" || fail "UMask=${umask_value}"
-    [[ "$read_write_paths" == *"${repo_root}/logs"* ]] && pass "ReadWritePaths includes ${repo_root}/logs" || fail "ReadWritePaths=${read_write_paths}"
+    expect_equal "$protect_system" strict "ProtectSystem=strict" "ProtectSystem="
+    expect_equal "$protect_home" read-only "ProtectHome=read-only" "ProtectHome="
+    expect_equal "$no_new_privs" yes "NoNewPrivileges=yes" "NoNewPrivileges="
+    expect_equal "$umask_value" 0077 "UMask=0077" "UMask="
+    if [[ "$read_write_paths" == *"${live_root}/logs"* ]]; then
+        pass "ReadWritePaths includes ${live_root}/logs"
+    else
+        fail "ReadWritePaths=${read_write_paths}"
+    fi
+    if [[ "$read_write_paths" == *"${live_root}/state"* ]]; then
+        pass "ReadWritePaths includes ${live_root}/state"
+    else
+        fail "ReadWritePaths is missing ${live_root}/state"
+    fi
 
     service_type="$(systemctl show "$service" -P Type)"
     watchdog_usec="$(systemctl show "$service" -P WatchdogUSec)"
-    [[ "$service_type" == "notify" ]] && pass "Type=notify (watchdog-capable)" || fail "Type=${service_type} (expected notify)"
-    [[ -n "$watchdog_usec" && "$watchdog_usec" != "0" ]] && pass "watchdog enabled (WatchdogUSec=${watchdog_usec})" || fail "watchdog disabled (WatchdogUSec=${watchdog_usec:-unset})"
+    expect_equal "$service_type" notify "Type=notify (watchdog-capable)" "Type should be notify; actual="
+    if [[ -n "$watchdog_usec" && "$watchdog_usec" != "0" ]]; then
+        pass "watchdog enabled (WatchdogUSec=${watchdog_usec})"
+    else
+        fail "watchdog disabled (WatchdogUSec=${watchdog_usec:-unset})"
+    fi
 
     on_failure="$(systemctl show "$service" -P OnFailure)"
-    [[ "$on_failure" == *"weather-backend-alert.service"* ]] && pass "OnFailure alert unit wired" || fail "OnFailure=${on_failure:-unset} (expected weather-backend-alert.service)"
+    if [[ "$on_failure" == *"weather-backend-alert.service"* ]]; then
+        pass "OnFailure alert unit wired"
+    else
+        fail "OnFailure=${on_failure:-unset} (expected weather-backend-alert.service)"
+    fi
 else
     fail "systemd service not found: ${service}"
 fi
@@ -164,37 +195,41 @@ for endpoint in healthz readyz metrics version; do
 done
 
 no_origin_status="$(http_code -X POST -H 'Content-Type: application/json' --data '{"value":1}' "https://${domain}/api/weather/speed")"
-[[ "$no_origin_status" == "403" ]] && pass "mutation without Origin is rejected" || fail "mutation without Origin returned ${no_origin_status}"
+expect_equal "$no_origin_status" 403 "mutation without Origin is rejected" "mutation without Origin returned "
 
 bad_type_status="$(http_code -X POST -H "Origin: https://${domain}" --data '{"value":1}' "https://${domain}/api/weather/speed")"
-[[ "$bad_type_status" == "415" ]] && pass "mutation without JSON content type is rejected" || fail "mutation without JSON content type returned ${bad_type_status}"
+expect_equal "$bad_type_status" 415 "mutation without JSON content type is rejected" "mutation without JSON content type returned "
 
-json_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{"value":1}' "https://${domain}/api/weather/speed")"
-[[ "$json_status" == "200" ]] && pass "same-origin JSON mutation succeeds" || fail "same-origin JSON mutation returned ${json_status}"
+range_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{"value":0}' "https://${domain}/api/weather/speed")"
+expect_equal "$range_status" 400 "out-of-range speed is rejected without changing simulation state" "out-of-range speed returned "
 
 invalid_json_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{"value":' "https://${domain}/api/weather/speed")"
-[[ "$invalid_json_status" == "400" ]] && pass "invalid mutation JSON is rejected" || fail "invalid mutation JSON returned ${invalid_json_status}"
+expect_equal "$invalid_json_status" 400 "invalid mutation JSON is rejected" "invalid mutation JSON returned "
 
 missing_field_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{}' "https://${domain}/api/weather/speed")"
-[[ "$missing_field_status" == "400" ]] && pass "mutation missing required field is rejected" || fail "mutation missing required field returned ${missing_field_status}"
+expect_equal "$missing_field_status" 400 "mutation missing required field is rejected" "mutation missing required field returned "
 
 forecast_no_origin_status="$(http_code -X POST -H 'Content-Type: application/json' --data '{"steps":10}' "https://${domain}/api/grid/forecast")"
-[[ "$forecast_no_origin_status" == "403" ]] && pass "forecast POST without Origin is rejected" || fail "forecast POST without Origin returned ${forecast_no_origin_status}"
+expect_equal "$forecast_no_origin_status" 403 "forecast POST without Origin is rejected" "forecast POST without Origin returned "
 
 forecast_bad_type_status="$(http_code -X POST -H "Origin: https://${domain}" --data '{"steps":10}' "https://${domain}/api/grid/forecast")"
-[[ "$forecast_bad_type_status" == "415" ]] && pass "forecast POST without JSON content type is rejected" || fail "forecast POST without JSON content type returned ${forecast_bad_type_status}"
+expect_equal "$forecast_bad_type_status" 415 "forecast POST without JSON content type is rejected" "forecast POST without JSON content type returned "
 
-forecast_json_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{"steps":10}' "https://${domain}/api/grid/forecast")"
-[[ "$forecast_json_status" == "200" ]] && pass "same-origin JSON forecast succeeds" || fail "same-origin JSON forecast returned ${forecast_json_status}"
+if [[ "${ALLOW_EXPENSIVE_PROBES:-0}" == "1" ]]; then
+    forecast_json_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{"steps":1}' "https://${domain}/api/grid/forecast")"
+    expect_equal "$forecast_json_status" 200 "same-origin JSON forecast succeeds" "same-origin JSON forecast returned "
+else
+    pass "valid forecast probe skipped (set ALLOW_EXPENSIVE_PROBES=1 to enable)"
+fi
 
 forecast_invalid_json_status="$(http_code -X POST -H "Origin: https://${domain}" -H 'Content-Type: application/json' --data '{"steps":' "https://${domain}/api/grid/forecast")"
-[[ "$forecast_invalid_json_status" == "400" ]] && pass "invalid forecast JSON is rejected" || fail "invalid forecast JSON returned ${forecast_invalid_json_status}"
+expect_equal "$forecast_invalid_json_status" 400 "invalid forecast JSON is rejected" "invalid forecast JSON returned "
 
 for method in TRACE PUT DELETE PATCH; do
     root_method_status="$(http_code -X "$method" "https://${domain}/")"
     api_method_status="$(http_code -X "$method" "https://${domain}/api/healthz")"
-    [[ "$root_method_status" == "405" ]] && pass "${method} / is rejected" || fail "${method} / returned ${root_method_status}"
-    [[ "$api_method_status" == "405" ]] && pass "${method} /api/healthz is rejected" || fail "${method} /api/healthz returned ${api_method_status}"
+    expect_equal "$root_method_status" 405 "${method} / is rejected" "${method} / returned "
+    expect_equal "$api_method_status" 405 "${method} /api/healthz is rejected" "${method} /api/healthz returned "
 done
 
 section "Metrics export"

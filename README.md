@@ -203,20 +203,27 @@ npm run build
 
 ### Configure & Deploy
 ```bash
+# Run only from the clean production checkout after reviewing the commit.
+cd /srv/canary/simulation.micutu.com/project
 scripts/deploy.sh
 ```
 
-### Environment (`.env`)
+The application deploy builds and tests in fresh staging paths, backs up the
+current binary and persisted state, atomically swaps backend/frontend releases,
+and rolls back automatically if production verification fails. It deliberately
+does not modify Nginx, systemd, Cloudflare, DNS, or firewall configuration. See
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md) for infrastructure procedures.
+
+### Runtime Environment (`/etc/simulation/simulation.env`)
 ```env
 PORT_BACKEND=8094
-PORT_FRONTEND=5173
-DOMAIN=simulation.micutu.com
-SSL_EMAIL=alex_mihai984@yahoo.com
 OPENWEATHER_API_KEY=your_openweathermap_key
 SIM_ALLOWED_ORIGIN=https://simulation.micutu.com
 # Optional: requires X-Simulation-Token on mutating endpoints when set.
 SIM_MUTATION_TOKEN=change-me
 ```
+
+The production file is root-owned, mode `0600`, and is never stored in Git.
 
 ---
 
@@ -250,7 +257,9 @@ simulation/
 ├── deploy/
 │   ├── logrotate/
 │   │   └── weather-backend
-│   ├── weather-backend.service
+│   ├── simulation-canary.service
+│   ├── weather-backend-alert.service
+│   ├── weather-metrics.service / .timer
 │   └── nginx/
 │       ├── simulation.micutu.com.conf
 │       └── snippets/simulation-security-headers.conf
@@ -258,7 +267,6 @@ simulation/
 │   └── OPERATIONS.md
 ├── logs/
 ├── state/                       — grid snapshot (world survives restarts)
-├── .env
 ├── .gitignore
 └── README.md
 ```
@@ -270,7 +278,7 @@ simulation/
 - **Nginx**: HSTS with `preload`, CSP, `X-Frame-Options`, `X-Content-Type-Options`, rate limiting (10 req/s burst 20)
 - **TLS**: TLS 1.2 + 1.3 only (1.0/1.1 disabled)
 - **Backend**: Bound to `127.0.0.1:8094` only (not externally reachable); global token buckets on mutations
-- **systemd**: deploy template includes `NoNewPrivileges`, `PrivateTmp`, `PrivateDevices`, `ProtectSystem=strict`, `ProtectHome=read-only`, `ReadWritePaths=/home/micu/simulation/logs`, `SystemCallFilter=@system-service`, `CapabilityBoundingSet=` (empty), `UMask=0077`
+- **systemd**: `simulation-canary.service` includes `NoNewPrivileges`, `PrivateTmp`, `PrivateDevices`, `ProtectSystem=strict`, `ProtectHome=read-only`, narrow writable log/state paths, `SystemCallFilter=@system-service`, an empty capability set, and `UMask=0077`
 - **Supervision**: `Type=notify` + `WatchdogSec=30` — the backend pings the systemd watchdog from its event loop, so hangs restart automatically, not just crashes
 - **Firewall**: UFW active, default DENY, only 22/80/443 open
 

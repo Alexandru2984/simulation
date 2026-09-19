@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Send a failure alert through the local mail server (mailcow, localhost:25).
-# Triggered by OnFailure= on weather-backend.service; recipient comes from
+# Triggered by OnFailure= on simulation-canary.service; recipient comes from
 # ALERT_EMAIL in the environment (see EnvironmentFile in the alert unit).
 set -euo pipefail
 
-unit="${1:-weather-backend.service}"
+unit="${1:-simulation-canary.service}"
 rcpt="${ALERT_EMAIL:-}"
 from="${ALERT_FROM:-weather-backend@micutu.com}"
 

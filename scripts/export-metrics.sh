@@ -24,6 +24,14 @@ emit_help() {
 # TYPE weather_backend_ws_clients gauge
 # HELP weather_backend_uptime_seconds Backend process uptime.
 # TYPE weather_backend_uptime_seconds gauge
+# HELP weather_backend_assimilation_last_success_unixtime Last accepted OWM observation time.
+# TYPE weather_backend_assimilation_last_success_unixtime gauge
+# HELP weather_backend_assimilation_accepted_total Accepted OWM observations since process start.
+# TYPE weather_backend_assimilation_accepted_total counter
+# HELP weather_backend_assimilation_upstream_failures_total Failed OWM requests since process start.
+# TYPE weather_backend_assimilation_upstream_failures_total counter
+# HELP weather_backend_assimilation_validation_failures_total Rejected OWM payloads since process start.
+# TYPE weather_backend_assimilation_validation_failures_total counter
 EOF
 }
 
@@ -36,7 +44,11 @@ if json="$(curl -fsS --max-time 5 "${backend}/api/metrics" 2>/dev/null)"; then
             "weather_backend_sim_time_seconds \(.simTime)",
             "weather_backend_sim_speed \(.simSpeed)",
             "weather_backend_ws_clients \(.wsClients)",
-            "weather_backend_uptime_seconds \(.uptimeSeconds)"
+            "weather_backend_uptime_seconds \(.uptimeSeconds)",
+            "weather_backend_assimilation_last_success_unixtime \(.assimilationLastSuccessUnix)",
+            "weather_backend_assimilation_accepted_total \(.assimilationAccepted)",
+            "weather_backend_assimilation_upstream_failures_total \(.assimilationUpstreamFailures)",
+            "weather_backend_assimilation_validation_failures_total \(.assimilationValidationFailures)"
         ' <<<"$json"
     } > "$tmp"
 else

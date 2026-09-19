@@ -1,4 +1,4 @@
-/home/micu/simulation/logs/backend.log /home/micu/simulation/logs/backend-error.log {
+/srv/canary/simulation.micutu.com/project/logs/backend.log /srv/canary/simulation.micutu.com/project/logs/backend-error.log {
     daily
     rotate 14
     compress
@@ -6,15 +6,17 @@
     missingok
     notifempty
     copytruncate
+    create 0600 micu micu
     su micu micu
 }
 
-/home/micu/simulation/logs/drogon*.log {
+/srv/canary/simulation.micutu.com/project/logs/drogon*.log {
     weekly
     rotate 4
     compress
     missingok
     notifempty
     copytruncate
+    create 0600 micu micu
     su micu micu
 }
