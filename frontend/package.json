@@ -11,7 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@react-three/drei": "^10.7.7",
+    "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.6.1",
     "camera-controls": "^3.1.2",
     "react": "^19.2.5",
