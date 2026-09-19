@@ -3,6 +3,8 @@ export default function StatusBadge({ status }) {
     connected:    '#22c55e',
     reconnecting: '#f59e0b',
     connecting:   '#60a5fa',
+    stale:        '#fb923c',
+    offline:      '#ef4444',
   };
   return (
     <span style={{

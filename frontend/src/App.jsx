@@ -1,6 +1,7 @@
 import { Suspense, lazy, useState, useEffect, useCallback, useRef } from 'react'
 import { useWeatherSocket } from './hooks/useWeatherSocket'
 import { useGridSocket } from './hooks/useGridSocket'
+import { combineSocketStatuses } from './hooks/webSocketManager'
 
 const WeatherGlobe = lazy(() => import('./components/WeatherGlobe'))
 const WeatherHUD = lazy(() => import('./components/WeatherHUD'))
@@ -35,8 +36,8 @@ function useIsMobile() {
 }
 
 export default function App() {
-  const { data, status }            = useWeatherSocket()
-  const { data: gridData }          = useGridSocket()
+  const { data, status: weatherStatus } = useWeatherSocket()
+  const { data: gridData, status: gridStatus } = useGridSocket()
   const [locations, setLocations]   = useState([])
   const [flyToLocation, setFlyToLocation] = useState(null)
   const [selectedCity, setSelectedCity]   = useState(null)  // {lat, lon, name} for globe pin
@@ -47,6 +48,7 @@ export default function App() {
   const [toast, setToast]                 = useState(null)
   const toastTimerRef                     = useRef(null)
   const isMobile                          = useIsMobile()
+  const status = combineSocketStatuses(weatherStatus, gridStatus)
 
   useEffect(() => {
     fetch('/api/weather/locations')

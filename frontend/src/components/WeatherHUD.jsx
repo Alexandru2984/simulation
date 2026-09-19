@@ -54,7 +54,10 @@ export default function WeatherHUD({
   const [sheetExpanded, setSheetExpanded] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState(null)
 
-  const statusColor = { connected: '#22c55e', reconnecting: '#f59e0b', connecting: '#60a5fa' }[status] || '#64748b'
+  const statusColor = {
+    connected: '#22c55e', reconnecting: '#f59e0b', connecting: '#60a5fa',
+    stale: '#fb923c', offline: '#ef4444',
+  }[status] || '#64748b'
   const condIcon    = weatherIcon(wd?.pressure ?? null, wd?.temperature ?? null)
 
   const handleSeed = useCallback(async (lat, lon, name) => {
