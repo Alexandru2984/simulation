@@ -258,6 +258,7 @@ simulation/
 │   ├── logrotate/
 │   │   └── weather-backend
 │   ├── simulation-canary.service
+│   ├── simulation-canary-alert.conf
 │   ├── weather-backend-alert.service
 │   ├── weather-metrics.service / .timer
 │   └── nginx/

@@ -78,17 +78,13 @@ Treat Nginx, systemd, logrotate and Cloudflare changes as separate maintenance.
 Back up the live files first. Never reload Nginx until its complete live
 configuration passes `nginx -t`.
 
-### systemd, alerting and metrics
+### systemd backend unit
 
 Validate the candidate units before installing them:
 
 ```bash
 cd /srv/canary/simulation.micutu.com/project
-systemd-analyze verify \
-  "$PWD/deploy/simulation-canary.service" \
-  "$PWD/deploy/weather-backend-alert.service" \
-  "$PWD/deploy/weather-metrics.service" \
-  "$PWD/deploy/weather-metrics.timer"
+systemd-analyze verify "$PWD/deploy/simulation-canary.service"
 ```
 
 Create a timestamped backup, install, revalidate and reload:
@@ -99,31 +95,20 @@ backup="/srv/backups/simulation/infra-${stamp}"
 sudo install -d -m 0700 "$backup"
 sudo cp -a /etc/systemd/system/simulation-canary.service "$backup/"
 sudo install -m 0644 deploy/simulation-canary.service /etc/systemd/system/simulation-canary.service
-sudo install -m 0644 deploy/weather-backend-alert.service /etc/systemd/system/weather-backend-alert.service
-sudo install -m 0644 deploy/weather-metrics.service /etc/systemd/system/weather-metrics.service
-sudo install -m 0644 deploy/weather-metrics.timer /etc/systemd/system/weather-metrics.timer
-sudo systemd-analyze verify \
-  /etc/systemd/system/simulation-canary.service \
-  /etc/systemd/system/weather-backend-alert.service \
-  /etc/systemd/system/weather-metrics.service \
-  /etc/systemd/system/weather-metrics.timer
+sudo systemd-analyze verify /etc/systemd/system/simulation-canary.service
 sudo systemctl daemon-reload
 sudo systemctl restart simulation-canary.service
-sudo systemctl enable --now weather-metrics.timer
 ```
 
 Then verify:
 
 ```bash
-systemctl is-active simulation-canary.service weather-metrics.timer
+systemctl is-active simulation-canary.service
 systemctl show simulation-canary.service -p Type -p WatchdogUSec -p NRestarts \
   -p ProtectSystem -p ProtectHome -p ReadWritePaths -p NoNewPrivileges -p OnFailure
 systemd-analyze security simulation-canary.service
 curl -fsS https://simulation.micutu.com/api/readyz
 ```
-
-Do not start `weather-backend-alert.service` as a routine test: that sends an
-external email when `ALERT_EMAIL` is configured.
 
 ### Nginx
 
@@ -197,10 +182,9 @@ The backend uses `Type=notify` and `WatchdogSec=30`. It announces readiness and
 pings the watchdog from the event loop; a hung loop is restarted even if the
 process has not crashed.
 
-`OnFailure=weather-backend-alert.service` sends through the local SMTP service
-to `ALERT_EMAIL` from `/etc/simulation/simulation.env`. A monitor on the same VPS
-cannot report total host/network failure, so an external uptime monitor should
-check `https://simulation.micutu.com/api/readyz` every 1–5 minutes.
+A monitor on the same VPS cannot report total host/network failure, so an
+external uptime monitor should check
+`https://simulation.micutu.com/api/readyz` every 1–5 minutes.
 
 After correcting a sustained failure:
 
@@ -209,10 +193,55 @@ sudo systemctl reset-failed simulation-canary.service
 sudo systemctl start simulation-canary.service
 ```
 
-`weather-metrics.timer` exports a node_exporter textfile every 30 seconds at
-`/var/lib/prometheus/node-exporter/weather_backend.prom`. Metrics include
-backend availability, tick/time/speed, WebSocket clients, uptime and OWM
-assimilation success/failure counters.
+### Optional failure email
+
+The supplied alert unit sends to `ALERT_EMAIL` through SMTP on
+`127.0.0.1:25`. Do not wire `OnFailure` until that transport is present and
+verified. Once it is available, install the alert unit and the explicit
+drop-in:
+
+```bash
+sudo install -m 0644 deploy/weather-backend-alert.service \
+  /etc/systemd/system/weather-backend-alert.service
+sudo install -d -m 0755 /etc/systemd/system/simulation-canary.service.d
+sudo install -m 0644 deploy/simulation-canary-alert.conf \
+  /etc/systemd/system/simulation-canary.service.d/alert.conf
+sudo systemd-analyze verify \
+  /etc/systemd/system/simulation-canary.service \
+  /etc/systemd/system/weather-backend-alert.service
+sudo systemctl daemon-reload
+systemctl show simulation-canary.service -p OnFailure
+```
+
+Do not start the alert service as a routine test: with `ALERT_EMAIL` configured,
+that sends an external message. If no local SMTP transport exists, leave the
+drop-in uninstalled and rely on the external readiness monitor.
+
+### Optional Prometheus textfile export
+
+`weather-metrics.timer` can export backend availability, tick/time/speed,
+WebSocket clients, uptime and OWM assimilation counters every 30 seconds. Do
+not enable it merely because something listens on port 9100: first verify that
+the intended node_exporter responds, has the textfile collector enabled, and
+can see the same host directory used by `TEXTFILE_DIR`.
+
+The supplied unit defaults to
+`/var/lib/prometheus/node-exporter/weather_backend.prom`. Once that exact
+directory is configured in the intended exporter:
+
+```bash
+sudo install -m 0644 deploy/weather-metrics.service /etc/systemd/system/weather-metrics.service
+sudo install -m 0644 deploy/weather-metrics.timer /etc/systemd/system/weather-metrics.timer
+sudo systemd-analyze verify \
+  /etc/systemd/system/weather-metrics.service \
+  /etc/systemd/system/weather-metrics.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now weather-metrics.timer
+```
+
+Verify the generated file and the actual scrape endpoint before considering the
+pipeline operational. On a shared VPS, do not couple this project silently to
+another application's Docker volume or Prometheus instance.
 
 ## Persistence
 

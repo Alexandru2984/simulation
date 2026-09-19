@@ -108,6 +108,7 @@ if systemctl show "$service" >/dev/null 2>&1; then
     no_new_privs="$(systemctl show "$service" -P NoNewPrivileges)"
     umask_value="$(systemctl show "$service" -P UMask)"
     read_write_paths="$(systemctl show "$service" -P ReadWritePaths)"
+    bind_paths="$(systemctl show "$service" -P BindPaths)"
 
     expect_equal "$protect_system" strict "ProtectSystem=strict" "ProtectSystem="
     expect_equal "$protect_home" read-only "ProtectHome=read-only" "ProtectHome="
@@ -123,6 +124,11 @@ if systemctl show "$service" >/dev/null 2>&1; then
     else
         fail "ReadWritePaths is missing ${live_root}/state"
     fi
+    if [[ -z "$bind_paths" ]]; then
+        pass "no compatibility BindPaths remain"
+    else
+        fail "unexpected BindPaths remain: ${bind_paths}"
+    fi
 
     service_type="$(systemctl show "$service" -P Type)"
     watchdog_usec="$(systemctl show "$service" -P WatchdogUSec)"
@@ -136,8 +142,18 @@ if systemctl show "$service" >/dev/null 2>&1; then
     on_failure="$(systemctl show "$service" -P OnFailure)"
     if [[ "$on_failure" == *"weather-backend-alert.service"* ]]; then
         pass "OnFailure alert unit wired"
+        if systemctl cat weather-backend-alert.service >/dev/null 2>&1; then
+            pass "weather-backend-alert.service is installed"
+        else
+            fail "OnFailure references a missing weather-backend-alert.service"
+        fi
+        if ss -ltn | rg -q '(127\.0\.0\.1|\[::1\]):25\b'; then
+            pass "local SMTP listener is available for failure alerts"
+        else
+            fail "OnFailure email is enabled but no loopback SMTP listener exists"
+        fi
     else
-        fail "OnFailure=${on_failure:-unset} (expected weather-backend-alert.service)"
+        warn "optional OnFailure email alert is not enabled"
     fi
 else
     fail "systemd service not found: ${service}"
@@ -233,28 +249,33 @@ for method in TRACE PUT DELETE PATCH; do
 done
 
 section "Metrics export"
-if systemctl is-active weather-metrics.timer >/dev/null 2>&1; then
-    pass "weather-metrics.timer is active"
-else
-    fail "weather-metrics.timer is not active"
-fi
-
-prom_file="/var/lib/prometheus/node-exporter/weather_backend.prom"
-if [[ -f "$prom_file" ]]; then
-    prom_age=$(( $(date +%s) - $(stat -c %Y "$prom_file") ))
-    if (( prom_age < 120 )); then
-        pass "weather_backend.prom is fresh (${prom_age}s old)"
+if systemctl cat weather-metrics.timer >/dev/null 2>&1; then
+    if systemctl is-active weather-metrics.timer >/dev/null 2>&1; then
+        pass "weather-metrics.timer is active"
     else
-        fail "weather_backend.prom is stale (${prom_age}s old)"
+        fail "weather-metrics.timer is installed but not active"
+    fi
+
+    prom_file="${WEATHER_PROM_FILE:-/var/lib/prometheus/node-exporter/weather_backend.prom}"
+    if [[ -f "$prom_file" ]]; then
+        prom_age=$(( $(date +%s) - $(stat -c %Y "$prom_file") ))
+        if (( prom_age < 120 )); then
+            pass "weather_backend.prom is fresh (${prom_age}s old)"
+        else
+            fail "weather_backend.prom is stale (${prom_age}s old)"
+        fi
+    else
+        fail "weather_backend.prom is missing"
+    fi
+
+    exporter_url="${NODE_EXPORTER_URL:-http://127.0.0.1:9100/metrics}"
+    if curl -fsS --max-time 3 "$exporter_url" 2>/dev/null | rg -q '^weather_backend_up 1'; then
+        pass "node_exporter serves weather_backend_up 1"
+    else
+        fail "node_exporter does not expose weather_backend_up 1"
     fi
 else
-    fail "weather_backend.prom is missing"
-fi
-
-if curl -fsS --max-time 3 http://127.0.0.1:9100/metrics 2>/dev/null | rg -q '^weather_backend_up 1'; then
-    pass "node_exporter serves weather_backend_up 1"
-else
-    fail "node_exporter does not expose weather_backend_up 1"
+    warn "optional weather metrics timer is not installed"
 fi
 
 section "Dependency and host hygiene"
