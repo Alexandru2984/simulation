@@ -1,5 +1,6 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
+import { normalizeFrontIntensity } from '../utils/weatherFeatures'
 
 const SPHERE_R = 2.05
 
@@ -41,13 +42,13 @@ export default function FrontalLayer({ fronts }) {
     const pos       = new Float32Array(fronts.length * 3)
     const intensity = new Float32Array(fronts.length)
 
-    fronts.forEach(({ lat, lon, frontIntensity }, i) => {
+    fronts.forEach(({ lat, lon, intensity: rawIntensity }, i) => {
       const latR = (lat ?? 0) * Math.PI / 180
       const lonR = ((lon ?? 0) + 180) * Math.PI / 180
       pos[i*3]   = -SPHERE_R * Math.cos(latR) * Math.cos(lonR)
       pos[i*3+1] =  SPHERE_R * Math.sin(latR)
       pos[i*3+2] =  SPHERE_R * Math.cos(latR) * Math.sin(lonR)
-      intensity[i] = Math.max(0, Math.min(1, frontIntensity ?? 0))
+      intensity[i] = normalizeFrontIntensity(rawIntensity)
     })
 
     const g = new THREE.BufferGeometry()
@@ -64,6 +65,11 @@ export default function FrontalLayer({ fronts }) {
 
     return { geometry: g, material: m }
   }, [fronts])
+
+  useEffect(() => () => {
+    geometry?.dispose()
+    material?.dispose()
+  }, [geometry, material])
 
   if (!geometry || !material) return null
 

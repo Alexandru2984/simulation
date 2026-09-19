@@ -1,13 +1,6 @@
 import { Html } from '@react-three/drei'
 import { latLonToVec3, GLOBE_RADIUS } from '../utils/geoUtils'
-
-const INTENSITY_LABEL = (anom) => {
-  if (anom < -20) return 'Cat 4+'
-  if (anom < -15) return 'Cat 3'
-  if (anom < -12) return 'Cat 2'
-  if (anom < -9)  return 'Cat 1'
-  return 'TD'
-}
+import { pressureAnomalyLabel } from '../utils/weatherFeatures'
 
 export default function StormLabels({ storms = [] }) {
   if (!storms || storms.length === 0) return null
@@ -41,7 +34,7 @@ export default function StormLabels({ storms = [] }) {
               <span style={{ fontSize: '0.9rem' }}>🌀</span>
               <div>
                 <div style={{ fontWeight: 700, color: '#a855f7', lineHeight: 1.2 }}>
-                  {INTENSITY_LABEL(storm.anom)}
+                  {pressureAnomalyLabel(storm.anom)}
                 </div>
                 <div style={{ color: '#475569' }}>
                   {storm.P?.toFixed(0)} hPa · {storm.wind?.toFixed(0)} m/s
