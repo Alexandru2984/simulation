@@ -2,6 +2,7 @@
 #include "Security.h"
 #include "RateLimiter.h"
 #include "test_framework.h"
+#include <limits>
 
 // ── Content type ──────────────────────────────────────────────────────────────
 
@@ -33,6 +34,19 @@ TEST(strict_origin_match) {
             "prefix-spoofed origin must fail");
     require(!Security::originAllowed("http://simulation.micutu.com", allowed),
             "http downgrade origin must fail");
+}
+
+TEST(finite_ranges_reject_special_values) {
+    require(Security::finiteInRange(0.0, -1.0, 1.0), "finite value in range must pass");
+    require(Security::finiteInRange(-1.0, -1.0, 1.0), "inclusive lower bound must pass");
+    require(Security::finiteInRange(1.0, -1.0, 1.0), "inclusive upper bound must pass");
+    require(!Security::finiteInRange(2.0, -1.0, 1.0), "out-of-range value must fail");
+    require(!Security::finiteInRange(std::numeric_limits<double>::quiet_NaN(), -1.0, 1.0),
+            "NaN must fail");
+    require(!Security::finiteInRange(std::numeric_limits<double>::infinity(), -1.0, 1.0),
+            "positive infinity must fail");
+    require(!Security::finiteInRange(-std::numeric_limits<double>::infinity(), -1.0, 1.0),
+            "negative infinity must fail");
 }
 
 // ── Rate limiter ──────────────────────────────────────────────────────────────
@@ -76,6 +90,7 @@ int main() {
     RUN(json_content_type_accepted);
     RUN(non_json_content_type_rejected);
     RUN(strict_origin_match);
+    RUN(finite_ranges_reject_special_values);
     RUN(limiter_allows_burst_then_blocks);
     RUN(limiter_refills_over_time);
     RUN(limiter_caps_refill_at_burst);

@@ -93,14 +93,15 @@ void SeedController::seedWeather(
 
     double lat = (*j)["lat"].asDouble();
     double lon = (*j)["lon"].asDouble();
-    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    if (!Security::finiteInRange(lat, -90.0, 90.0) ||
+        !Security::finiteInRange(lon, -180.0, 180.0)) {
         cb(Security::json("{\"error\":\"bad coordinates\"}", drogon::k400BadRequest));
         return;
     }
 
     const char* apiKey = std::getenv("OPENWEATHER_API_KEY");
 
-    auto sendFallback = [=, cb = std::move(cb)](bool tried_api) mutable {
+    auto fallbackResponse = [lat, lon](bool tried_api) {
         const CityPreset* p = nearestPreset(lat, lon);
         WeatherSim::instance().seed(p->temp, p->pressure, p->wind_speed, p->wind_dir);
 
@@ -114,11 +115,11 @@ void SeedController::seedWeather(
         out["wind_direction"]= p->wind_dir;
         auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
         corsHeaders(resp);
-        cb(resp);
+        return resp;
     };
 
     if (!apiKey || std::string(apiKey).empty() || std::string(apiKey) == "YOUR_KEY_HERE") {
-        sendFallback(false);
+        cb(fallbackResponse(false));
         return;
     }
 
@@ -135,20 +136,33 @@ void SeedController::seedWeather(
     owReq->setParameter("appid", key);
     owReq->setParameter("units", "metric");
 
-    client->sendRequest(owReq, [lat, lon, cb = std::move(cb), sendFallback](
+    client->sendRequest(owReq, [cb = std::move(cb), fallbackResponse](
         drogon::ReqResult result, const drogon::HttpResponsePtr& owResp) mutable
     {
         if (result == drogon::ReqResult::Ok && owResp &&
-            owResp->getStatusCode() == drogon::k200OK)
+            owResp->getStatusCode() == drogon::k200OK &&
+            owResp->body().size() <= 64 * 1024)
         {
             auto json = owResp->getJsonObject();
-            if (json && (*json).isMember("main")) {
+            if (json && (*json)["main"]["temp"].isNumeric() &&
+                (*json)["main"]["pressure"].isNumeric() &&
+                (*json)["wind"]["speed"].isNumeric() &&
+                (!(*json)["wind"].isMember("deg") || (*json)["wind"]["deg"].isNumeric())) {
                 double temp     = (*json)["main"]["temp"].asDouble();
                 double pressure = (*json)["main"]["pressure"].asDouble();
                 double wspeed   = (*json)["wind"]["speed"].asDouble();
                 double wdir     = (*json)["wind"].isMember("deg") ?
                                   (*json)["wind"]["deg"].asDouble() : 0.0;
                 std::string city= (*json)["name"].asString();
+
+                const bool valid = Security::finiteInRange(temp, -100.0, 70.0) &&
+                    Security::finiteInRange(pressure, 800.0, 1200.0) &&
+                    Security::finiteInRange(wspeed, 0.0, 150.0) &&
+                    Security::finiteInRange(wdir, 0.0, 360.0);
+                if (!valid) {
+                    cb(fallbackResponse(true));
+                    return;
+                }
 
                 WeatherSim::instance().seed(temp, pressure, wspeed, wdir);
 
@@ -167,8 +181,8 @@ void SeedController::seedWeather(
             }
         }
         // API error → fallback
-        sendFallback(true);
-    });
+        cb(fallbackResponse(true));
+    }, 8.0);
 }
 
 // ── /api/weather/locations ────────────────────────────────────────────────────
@@ -220,10 +234,14 @@ void SeedController::setSpeed(
     }
 
     double value = (*j)["value"].asDouble();
-    value = std::max(0.1, std::min(100.0, value));
+    if (!Security::finiteInRange(value, 0.5, 50.0)) {
+        cb(Security::json("{\"error\":\"speed must be finite and between 0.5 and 50\"}",
+                          drogon::k400BadRequest));
+        return;
+    }
 
     // Drive both sims — the HUD readout and the grid the globe renders.
-    // GridSim applies its own 0.5–50 clamp on top.
+    // Keep both simulation engines on the same validated multiplier.
     WeatherSim::instance().setSpeed(value);
     GridSim::instance().setSpeed(static_cast<float>(value));
 

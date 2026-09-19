@@ -1,6 +1,7 @@
 #pragma once
 
 #include <drogon/drogon.h>
+#include <cmath>
 #include <cstdlib>
 #include <functional>
 #include <string>
@@ -21,6 +22,10 @@ inline bool isJsonContentType(std::string_view contentType) {
     constexpr std::string_view expected = "application/json";
     return contentType.size() >= expected.size() &&
            contentType.compare(0, expected.size(), expected) == 0;
+}
+
+inline bool finiteInRange(double value, double minimum, double maximum) {
+    return std::isfinite(value) && value >= minimum && value <= maximum;
 }
 
 inline const std::string& allowedOrigin() {

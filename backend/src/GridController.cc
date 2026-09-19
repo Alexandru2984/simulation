@@ -46,8 +46,18 @@ void GridRestController::inject(
     float intensity = ((*j).isMember("intensity") && (*j)["intensity"].isNumeric())
                       ? (*j)["intensity"].asFloat() : 1.0f;
 
-    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-        cb(jsonResp("{\"error\":\"bad coordinates\"}", drogon::k400BadRequest)); return;
+    if ((*j).isMember("intensity") && !(*j)["intensity"].isNumeric()) {
+        cb(jsonResp("{\"error\":\"intensity must be numeric\"}",
+                    drogon::k400BadRequest));
+        return;
+    }
+
+    if (!Security::finiteInRange(lat, -90.0, 90.0) ||
+        !Security::finiteInRange(lon, -180.0, 180.0) ||
+        !Security::finiteInRange(intensity, 0.1, 3.0)) {
+        cb(jsonResp("{\"error\":\"coordinates or intensity out of range\"}",
+                    drogon::k400BadRequest));
+        return;
     }
 
     GridSim::EventType type;
@@ -58,7 +68,7 @@ void GridRestController::inject(
     else if (typeStr == "tornado")       type = GridSim::EventType::TORNADO;
     else { cb(jsonResp("{\"error\":\"unknown type\"}", drogon::k400BadRequest)); return; }
 
-    GridSim::instance().inject(lat, lon, type, std::max(0.1f, std::min(3.0f, intensity)));
+    GridSim::instance().inject(lat, lon, type, intensity);
     cb(jsonResp("{\"ok\":true}"));
 }
 

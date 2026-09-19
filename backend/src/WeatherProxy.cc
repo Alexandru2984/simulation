@@ -66,7 +66,8 @@ void WeatherProxy::realtime(
     try { lat = std::stof(latStr); lon = std::stof(lonStr); }
     catch (...) { cb(errorResp("invalid lat/lon", drogon::k400BadRequest)); return; }
 
-    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    if (!Security::finiteInRange(lat, -90.0, 90.0) ||
+        !Security::finiteInRange(lon, -180.0, 180.0)) {
         cb(errorResp("lat/lon out of range", drogon::k400BadRequest)); return;
     }
 
@@ -100,6 +101,11 @@ void WeatherProxy::realtime(
                                                 const drogon::HttpResponsePtr& resp) {
         if (res != drogon::ReqResult::Ok || !resp || resp->statusCode() != drogon::k200OK) {
             cb(corsJson("{\"error\":\"upstream_failed\"}", drogon::k502BadGateway)); return;
+        }
+        if (resp->body().size() > 128 * 1024) {
+            cb(corsJson("{\"error\":\"upstream_response_too_large\"}",
+                        drogon::k502BadGateway));
+            return;
         }
         std::string body = std::string(resp->body());
         cachePut(cacheKey, body, 300);
@@ -153,6 +159,11 @@ void WeatherProxy::search(
                                                 const drogon::HttpResponsePtr& resp) {
         if (res != drogon::ReqResult::Ok || !resp || resp->statusCode() != drogon::k200OK) {
             cb(corsJson("{\"error\":\"upstream_failed\"}", drogon::k502BadGateway)); return;
+        }
+        if (resp->body().size() > 128 * 1024) {
+            cb(corsJson("{\"error\":\"upstream_response_too_large\"}",
+                        drogon::k502BadGateway));
+            return;
         }
         std::string body = std::string(resp->body());
         cachePut(cacheKey, body, 300);
