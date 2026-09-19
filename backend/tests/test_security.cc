@@ -2,6 +2,7 @@
 #include "Security.h"
 #include "RateLimiter.h"
 #include "OpenWeatherObservation.h"
+#include "OpenWeatherResponse.h"
 #include "test_framework.h"
 #include <limits>
 
@@ -124,6 +125,65 @@ TEST(openweather_observation_validation) {
             "missing wind direction must use the zero-degree fallback");
 }
 
+TEST(openweather_realtime_response_normalization) {
+    const std::string raw = R"({
+        "main":{"temp":18.5,"feels_like":17.2,"pressure":1012,"humidity":72},
+        "wind":{"speed":4.5,"deg":225},
+        "weather":[{"id":803,"main":"Clouds","description":"broken clouds","icon":"04d"}],
+        "sys":{"country":"RO","sunrise":123},
+        "name":"Bucharest","visibility":10000,
+        "coord":{"lat":44.43,"lon":26.10},"internal":"discard me"
+    })";
+
+    std::string normalized;
+    require(OpenWeatherResponse::normalizeRealtime(raw, normalized),
+            "valid realtime payload must normalize");
+
+    Json::Value output;
+    require(OpenWeatherResponse::parseJson(normalized, output),
+            "normalized realtime payload must remain JSON");
+    require(output["main"]["temp"].asDouble() == 18.5,
+            "temperature must be preserved");
+    require(output["weather"][0]["id"].asInt() == 803,
+            "weather condition must be preserved");
+    require(!output.isMember("coord") && !output.isMember("internal"),
+            "unused upstream fields must be discarded");
+
+    std::string ignored;
+    require(!OpenWeatherResponse::normalizeRealtime("{\"main\":{}}", ignored),
+            "malformed realtime schema must fail closed");
+    require(!OpenWeatherResponse::normalizeRealtime("not-json", ignored),
+            "invalid realtime JSON must fail closed");
+}
+
+TEST(openweather_search_response_normalization) {
+    const std::string raw = R"([
+        {"name":"Bucharest","lat":44.4323,"lon":26.1063,"country":"RO","state":"București","local_names":{"x":"discard"}},
+        {"name":"Bad latitude","lat":999,"lon":10,"country":"RO"},
+        {"name":"Wrong type","lat":"44","lon":26,"country":"RO"},
+        {"name":"London","lat":51.5072,"lon":-0.1276,"country":"GB"}
+    ])";
+
+    std::string normalized;
+    require(OpenWeatherResponse::normalizeSearch(raw, normalized),
+            "search array must normalize");
+
+    Json::Value output;
+    require(OpenWeatherResponse::parseJson(normalized, output),
+            "normalized search payload must remain JSON");
+    require(output.isArray() && output.size() == 2,
+            "invalid search entries must be discarded");
+    require(output[0]["name"].asString() == "Bucharest" &&
+                output[1]["name"].asString() == "London",
+            "valid search entries must keep their order");
+    require(!output[0].isMember("local_names"),
+            "unused search fields must be discarded");
+
+    std::string ignored;
+    require(!OpenWeatherResponse::normalizeSearch("{}", ignored),
+            "non-array search response must fail closed");
+}
+
 // ── Rate limiter ──────────────────────────────────────────────────────────────
 
 TEST(limiter_allows_burst_then_blocks) {
@@ -168,6 +228,8 @@ int main() {
     RUN(strict_origin_match);
     RUN(finite_ranges_reject_special_values);
     RUN(openweather_observation_validation);
+    RUN(openweather_realtime_response_normalization);
+    RUN(openweather_search_response_normalization);
     RUN(limiter_allows_burst_then_blocks);
     RUN(limiter_refills_over_time);
     RUN(limiter_caps_refill_at_burst);

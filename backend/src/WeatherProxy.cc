@@ -1,4 +1,5 @@
 #include "WeatherProxy.h"
+#include "OpenWeatherResponse.h"
 #include "Security.h"
 #include <drogon/drogon.h>
 #include <cstdlib>
@@ -143,7 +144,12 @@ void WeatherProxy::realtime(
                         drogon::k502BadGateway));
             return;
         }
-        std::string body = std::string(resp->body());
+        std::string body;
+        if (!OpenWeatherResponse::normalizeRealtime(std::string(resp->body()), body)) {
+            cb(corsJson("{\"error\":\"upstream_invalid_payload\"}",
+                        drogon::k502BadGateway));
+            return;
+        }
         cachePut(cacheKey, body, 300);
         cb(corsJson(body));
     }, 8.0);  // 8s timeout
@@ -203,7 +209,12 @@ void WeatherProxy::search(
                         drogon::k502BadGateway));
             return;
         }
-        std::string body = std::string(resp->body());
+        std::string body;
+        if (!OpenWeatherResponse::normalizeSearch(std::string(resp->body()), body)) {
+            cb(corsJson("{\"error\":\"upstream_invalid_payload\"}",
+                        drogon::k502BadGateway));
+            return;
+        }
         cachePut(cacheKey, body, 300);
         cb(corsJson(body));
     }, 8.0);
