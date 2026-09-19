@@ -83,7 +83,7 @@ for path in \
 done
 
 section "Host prerequisites"
-for cmd in cmake curl git jq mv npm realpath rg sudo systemctl; do
+for cmd in cmake cmp curl git jq mv npm realpath rg sudo systemctl; do
     if command -v "$cmd" >/dev/null 2>&1; then
         pass "command available: $cmd"
     else

@@ -43,23 +43,37 @@ rollback() {
         mv --exchange --no-target-directory "$frontend_stage" "$frontend_live" || rollback_failed=1
     fi
 
-    if (( backend_swapped == 1 )) && [[ -f "${backup_dir}/weather_backend" ]]; then
+    if (( backend_swapped == 1 )) && sudo test -f "${backup_dir}/weather_backend"; then
+        printf 'Restoring backend binary from %s\n' "$backup_dir" >&2
         sudo install -o micu -g micu -m 0755 "${backup_dir}/weather_backend" "${backend_live}.rollback" || rollback_failed=1
         sudo mv -f --no-target-directory "${backend_live}.rollback" "$backend_live" || rollback_failed=1
+        if ! sudo cmp -s "${backup_dir}/weather_backend" "$backend_live"; then
+            printf 'Backend binary restoration did not verify byte-for-byte.\n' >&2
+            rollback_failed=1
+        fi
+    elif (( backend_swapped == 1 )); then
+        printf 'Backend backup is missing or unreadable: %s\n' "${backup_dir}/weather_backend" >&2
+        rollback_failed=1
     fi
 
-    if [[ -f "${backup_dir}/grid.snapshot" ]]; then
+    if sudo test -f "${backup_dir}/grid.snapshot"; then
         sudo install -o micu -g micu -m 0600 "${backup_dir}/grid.snapshot" "$state_file" || rollback_failed=1
-    elif [[ -f "${backup_dir}/grid.snapshot.absent" && -f "$state_file" ]]; then
+        sudo cmp -s "${backup_dir}/grid.snapshot" "$state_file" || rollback_failed=1
+    elif sudo test -f "${backup_dir}/grid.snapshot.absent" && [[ -f "$state_file" ]]; then
         sudo unlink "$state_file" || rollback_failed=1
     fi
-    if [[ -f "${backup_dir}/history.snapshot" ]]; then
+    if sudo test -f "${backup_dir}/history.snapshot"; then
         sudo install -o micu -g micu -m 0600 "${backup_dir}/history.snapshot" "$history_file" || rollback_failed=1
-    elif [[ -f "${backup_dir}/history.snapshot.absent" && -f "$history_file" ]]; then
+        sudo cmp -s "${backup_dir}/history.snapshot" "$history_file" || rollback_failed=1
+    elif sudo test -f "${backup_dir}/history.snapshot.absent" && [[ -f "$history_file" ]]; then
         sudo unlink "$history_file" || rollback_failed=1
     fi
 
-    sudo systemctl start "$service" || rollback_failed=1
+    if sudo systemctl start "$service"; then
+        wait_for_ready || rollback_failed=1
+    else
+        rollback_failed=1
+    fi
     if (( rollback_failed == 0 )); then
         printf 'Rollback completed. Backup retained at %s\n' "$backup_dir" >&2
     else
@@ -147,7 +161,7 @@ sudo systemctl restart "$service"
 wait_for_ready
 
 echo "==> Local and public verification"
-expected_sha="$(git rev-parse HEAD)"
+expected_sha="$(git rev-parse --short=12 HEAD)"
 version_json="$(curl -fsS --max-time 5 "http://127.0.0.1:${backend_port}/api/version")"
 jq -e --arg sha "$expected_sha" '.gitSha == $sha and .dirty == false' <<<"$version_json" >/dev/null
 
