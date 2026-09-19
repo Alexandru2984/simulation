@@ -2,11 +2,13 @@ import { useRef, useMemo, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useFPS } from '../hooks/useFPS'
+import { particleBudgetForFps } from '../hooks/fpsStore'
 
 const N_RAIN = 8192
 const SPHERE_MIN = 2.01
 const SPHERE_SPAWN = 2.08
 const SPHERE_JITTER = 0.25
+const RAIN_COLOR = new THREE.Color(0.5, 0.8, 1.0)
 
 // Build cumulative weight array from R[] for O(log n) weighted sampling
 function buildCumul(R, rows, cols) {
@@ -53,7 +55,7 @@ export default function RainParticles({ gridData }) {
   const geoRef    = useRef()
 
   const fps = useFPS()
-  const particleBudget = fps >= 45 ? 8192 : fps >= 30 ? 4096 : fps >= 20 ? 2048 : 1024
+  const particleBudget = particleBudgetForFps(fps)
   const budgetRef = useRef(8192)
   budgetRef.current = particleBudget
 
@@ -156,7 +158,7 @@ export default function RainParticles({ gridData }) {
       </bufferGeometry>
       <pointsMaterial
         size={0.004}
-        color={new THREE.Color(0.5, 0.8, 1.0)}
+        color={RAIN_COLOR}
         transparent
         opacity={0.5}
         blending={THREE.AdditiveBlending}

@@ -3,8 +3,9 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { sampleGrid, GLOBE_RADIUS } from '../utils/geoUtils'
 import { useFPS } from '../hooks/useFPS'
+import { particleBudgetForFps } from '../hooks/fpsStore'
 
-const N = 20000        // particle count (reduced from 30k for mobile perf)
+const N = 8192         // maximum adaptive particle budget
 const R = GLOBE_RADIUS + 0.018
 const MAX_AGE = 8      // seconds before respawn
 const SPEED_SCALE = 0.00018  // m/s → degrees/frame scale
@@ -20,7 +21,7 @@ export default function WindParticles({ gridData }) {
   const pointsRef = useRef()
 
   const fps = useFPS()
-  const particleBudget = fps >= 45 ? 8192 : fps >= 30 ? 4096 : fps >= 20 ? 2048 : 1024
+  const particleBudget = particleBudgetForFps(fps)
   const budgetRef = useRef(8192)
   budgetRef.current = particleBudget
 
@@ -135,6 +136,11 @@ export default function WindParticles({ gridData }) {
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   }), [])
+
+  useEffect(() => () => {
+    geometry.dispose()
+    material.dispose()
+  }, [geometry, material])
 
   return <points ref={pointsRef} geometry={geometry} material={material} />
 }
