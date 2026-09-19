@@ -167,7 +167,7 @@ else
 fi
 
 nginx_config="$(sudo nginx -T 2>/dev/null)"
-if rg -q 'map[[:space:]]+\$realip_remote_addr[[:space:]]+\$from_cloudflare_origin' <<<"$nginx_config" &&
+if rg -q '(geo|map)[[:space:]]+\$realip_remote_addr[[:space:]]+\$from_cloudflare_origin' <<<"$nginx_config" &&
    rg -q 'set[[:space:]]+\$simulation_origin_allowed[[:space:]]+\$from_cloudflare_origin;' <<<"$nginx_config" &&
    rg -q 'if[[:space:]]*\(\$simulation_origin_allowed[[:space:]]*=[[:space:]]*0\)' <<<"$nginx_config"; then
     pass "live nginx config contains Cloudflare origin guard"
