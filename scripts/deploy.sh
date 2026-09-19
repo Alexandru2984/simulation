@@ -114,7 +114,10 @@ check_websocket() {
         -H 'Sec-WebSocket-Key: x3JJHMbDL1EzLkh9GBhXDw==' \
         -H "Origin: https://${domain}" \
         "https://${domain}${path}" || true)"
-    [[ "$status" == "101" ]]
+    if [[ "$status" != "101" ]]; then
+        printf 'WebSocket handshake failed for %s (HTTP %s).\n' "$path" "$status" >&2
+        return 1
+    fi
 }
 
 echo "==> Preflight"
@@ -163,28 +166,50 @@ wait_for_ready
 echo "==> Local and public verification"
 expected_sha="$(git rev-parse --short=12 HEAD)"
 version_json="$(curl -fsS --max-time 5 "http://127.0.0.1:${backend_port}/api/version")"
-jq -e --arg sha "$expected_sha" '.gitSha == $sha and .dirty == false' <<<"$version_json" >/dev/null
+if ! jq -e --arg sha "$expected_sha" '.gitSha == $sha and .gitDirty == false' \
+    <<<"$version_json" >/dev/null; then
+    printf 'Backend version mismatch: expected clean %s, got %s.\n' \
+        "$expected_sha" "$(jq -c '{gitSha, gitDirty}' <<<"$version_json")" >&2
+    exit 1
+fi
 
+echo "    public API"
 curl -fsS --max-time 8 "https://${domain}/api/healthz" >/dev/null
 curl -fsS --max-time 8 "https://${domain}/api/readyz" >/dev/null
 curl -fsS --max-time 8 "https://${domain}/api/grid" >/dev/null
 
+echo "    frontend entrypoint and asset"
 index_html="$(curl -fsS --max-time 8 "https://${domain}/")"
 asset_path="$(rg -o 'src="/assets/[^"]+\.js"' <<<"$index_html" | sed -n '1{s/^src="//;s/"$//;p;}')"
-[[ -n "$asset_path" ]]
+if [[ -z "$asset_path" ]]; then
+    echo "No production JavaScript asset found in index.html." >&2
+    exit 1
+fi
 curl -fsS --max-time 8 "https://${domain}${asset_path}" >/dev/null
 
+echo "    security headers"
 headers="$(curl -fsS --max-time 8 -D - -o /dev/null "https://${domain}/")"
 for header in strict-transport-security content-security-policy x-content-type-options referrer-policy permissions-policy; do
-    rg -qi "^${header}:" <<<"$headers"
+    if ! rg -qi "^${header}:" <<<"$headers"; then
+        printf 'Required response header is missing: %s\n' "$header" >&2
+        exit 1
+    fi
 done
 
+echo "    WebSocket handshakes"
 check_websocket /ws/weather
 check_websocket /ws/grid
 
+echo "    service stability"
 sleep 5
-[[ "$(systemctl is-active "$service")" == "active" ]]
-[[ "$(systemctl show "$service" -P NRestarts)" == "0" ]]
+if [[ "$(systemctl is-active "$service")" != "active" ]]; then
+    printf '%s is not active after deploy.\n' "$service" >&2
+    exit 1
+fi
+if [[ "$(systemctl show "$service" -P NRestarts)" != "0" ]]; then
+    printf '%s restarted unexpectedly during verification.\n' "$service" >&2
+    exit 1
+fi
 
 echo "==> Preserve previous frontend release in the backup"
 sudo mv --no-target-directory "$frontend_stage" "${backup_dir}/frontend-dist"
