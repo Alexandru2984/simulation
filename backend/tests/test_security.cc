@@ -11,6 +11,8 @@ TEST(json_content_type_accepted) {
             "plain application/json must pass");
     require(Security::isJsonContentType("application/json; charset=utf-8"),
             "json with charset parameter must pass");
+    require(Security::isJsonContentType(" Application/JSON ; charset=utf-8"),
+            "media type matching must be case-insensitive and tolerate OWS");
 }
 
 TEST(non_json_content_type_rejected) {
@@ -19,6 +21,35 @@ TEST(non_json_content_type_rejected) {
     require(!Security::isJsonContentType("application/jso"), "truncated type must fail");
     require(!Security::isJsonContentType("json"), "bare json must fail");
     require(!Security::isJsonContentType("text/json"), "text/json must fail");
+    require(!Security::isJsonContentType("application/jsonp"), "jsonp prefix must fail");
+    require(!Security::isJsonContentType("application/json-evil"),
+            "extended json media type must fail");
+    require(!Security::isJsonContentType("application/json,text/plain"),
+            "multiple content types must fail");
+}
+
+TEST(strict_number_parsing) {
+    double number = 0.0;
+    require(Security::parseFiniteDouble("44.43", number) &&
+                std::abs(number - 44.43) < 1e-9,
+            "decimal value must parse");
+    require(Security::parseFiniteDouble("-1.2e2", number) && number == -120.0,
+            "scientific notation must parse");
+    require(!Security::parseFiniteDouble("44junk", number),
+            "numeric prefix with trailing junk must fail");
+    require(!Security::parseFiniteDouble("nan", number), "NaN text must fail");
+    require(!Security::parseFiniteDouble("inf", number), "infinity text must fail");
+    require(!Security::parseFiniteDouble("", number), "empty number must fail");
+
+    int integer = 0;
+    require(Security::parseIntInRange("30", 1, 120, integer) && integer == 30,
+            "bounded integer must parse");
+    require(!Security::parseIntInRange("30junk", 1, 120, integer),
+            "integer suffix must fail");
+    require(!Security::parseIntInRange("0", 1, 120, integer),
+            "integer below range must fail");
+    require(!Security::parseIntInRange("121", 1, 120, integer),
+            "integer above range must fail");
 }
 
 // ── Origin ────────────────────────────────────────────────────────────────────
@@ -89,6 +120,7 @@ int main() {
 
     RUN(json_content_type_accepted);
     RUN(non_json_content_type_rejected);
+    RUN(strict_number_parsing);
     RUN(strict_origin_match);
     RUN(finite_ranges_reject_special_values);
     RUN(limiter_allows_burst_then_blocks);

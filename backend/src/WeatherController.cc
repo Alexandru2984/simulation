@@ -39,19 +39,28 @@ void WeatherRestController::getWeather(
 
 static std::mutex ws_mtx;
 static std::set<drogon::WebSocketConnectionPtr> ws_clients;
+static constexpr std::size_t MAX_WEATHER_WS_CLIENTS = 256;
 
 void WeatherWsController::handleNewConnection(
     const drogon::HttpRequestPtr& req,
     const drogon::WebSocketConnectionPtr& conn)
 {
-    auto origin = req->getHeader("Origin");
-    if (!origin.empty() && origin != Security::allowedOrigin()) {
+    const auto origin = req->getHeader("Origin");
+    if (!Security::originAllowed(origin, Security::allowedOrigin())) {
         conn->shutdown(drogon::CloseCode::kViolation, "forbidden origin");
         return;
     }
+    bool accepted = false;
     {
         std::lock_guard<std::mutex> lk(ws_mtx);
-        ws_clients.insert(conn);
+        if (ws_clients.size() < MAX_WEATHER_WS_CLIENTS) {
+            ws_clients.insert(conn);
+            accepted = true;
+        }
+    }
+    if (!accepted) {
+        conn->shutdown(drogon::CloseCode::kViolation, "connection limit reached");
+        return;
     }
     auto s = WeatherSim::instance().current();
     Json::FastWriter fw;

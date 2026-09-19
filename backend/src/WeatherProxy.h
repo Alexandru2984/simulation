@@ -29,7 +29,9 @@ public:
     static const std::string& apiKey();
 
 private:
-    // 5-minute in-process cache
+    // 5-minute in-process cache with a hard entry cap. The keys include user
+    // input, so leaving this map unbounded would permit memory exhaustion.
+    static constexpr std::size_t MAX_CACHE_ENTRIES = 256;
     static std::mutex               cacheMtx_;
     static std::unordered_map<std::string, CacheEntry> cache_;
 

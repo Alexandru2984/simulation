@@ -3,7 +3,25 @@
 #include <drogon/drogon.h>
 #include <cstdlib>
 #include <cmath>
+#include <algorithm>
 #include <sstream>
+
+namespace {
+
+const drogon::HttpClientPtr& owmClient() {
+    static const auto client =
+        drogon::HttpClient::newHttpClient("https://api.openweathermap.org");
+    return client;
+}
+
+RateLimiter& proxyUpstreamLimiter() {
+    // Cached responses do not consume this budget. This caps aggregate work
+    // across source IPs and protects the shared upstream API allowance.
+    static RateLimiter limiter(40.0, 10.0);
+    return limiter;
+}
+
+}  // namespace
 
 // ── Static members ────────────────────────────────────────────────────────────
 std::mutex WeatherProxy::cacheMtx_;
@@ -31,9 +49,23 @@ std::string WeatherProxy::cacheGet(const std::string& key) {
 
 void WeatherProxy::cachePut(const std::string& key, std::string body, int ttlSeconds) {
     std::lock_guard<std::mutex> lk(cacheMtx_);
+    const auto now = std::chrono::steady_clock::now();
+    for (auto it = cache_.begin(); it != cache_.end();) {
+        if (it->second.expires <= now) it = cache_.erase(it);
+        else ++it;
+    }
+
+    if (cache_.find(key) == cache_.end() && cache_.size() >= MAX_CACHE_ENTRIES) {
+        const auto oldest = std::min_element(
+            cache_.begin(), cache_.end(),
+            [](const auto& lhs, const auto& rhs) {
+                return lhs.second.expires < rhs.second.expires;
+            });
+        if (oldest != cache_.end()) cache_.erase(oldest);
+    }
     cache_[key] = {
         std::move(body),
-        std::chrono::steady_clock::now() + std::chrono::seconds(ttlSeconds)
+        now + std::chrono::seconds(ttlSeconds)
     };
 }
 
@@ -62,9 +94,11 @@ void WeatherProxy::realtime(
         cb(errorResp("lat and lon required", drogon::k400BadRequest)); return;
     }
 
-    float lat, lon;
-    try { lat = std::stof(latStr); lon = std::stof(lonStr); }
-    catch (...) { cb(errorResp("invalid lat/lon", drogon::k400BadRequest)); return; }
+    double lat = 0.0, lon = 0.0;
+    if (!Security::parseFiniteDouble(latStr, lat) ||
+        !Security::parseFiniteDouble(lonStr, lon)) {
+        cb(errorResp("invalid lat/lon", drogon::k400BadRequest)); return;
+    }
 
     if (!Security::finiteInRange(lat, -90.0, 90.0) ||
         !Security::finiteInRange(lon, -180.0, 180.0)) {
@@ -86,18 +120,20 @@ void WeatherProxy::realtime(
     if (key.empty()) {
         cb(errorResp("API key not configured", drogon::k503ServiceUnavailable)); return;
     }
+    if (!proxyUpstreamLimiter().allow()) {
+        cb(errorResp("upstream rate limited", drogon::k429TooManyRequests)); return;
+    }
 
     // Build OWM URL
     std::ostringstream url;
     url << "/data/2.5/weather?lat=" << lat << "&lon=" << lon
         << "&appid=" << key << "&units=metric";
 
-    auto client = drogon::HttpClient::newHttpClient("https://api.openweathermap.org");
     auto owmReq = drogon::HttpRequest::newHttpRequest();
     owmReq->setMethod(drogon::Get);
     owmReq->setPath(url.str());
 
-    client->sendRequest(owmReq, [cb, cacheKey](drogon::ReqResult res,
+    owmClient()->sendRequest(owmReq, [cb, cacheKey](drogon::ReqResult res,
                                                 const drogon::HttpResponsePtr& resp) {
         if (res != drogon::ReqResult::Ok || !resp || resp->statusCode() != drogon::k200OK) {
             cb(corsJson("{\"error\":\"upstream_failed\"}", drogon::k502BadGateway)); return;
@@ -143,6 +179,9 @@ void WeatherProxy::search(
     if (key.empty()) {
         cb(errorResp("API key not configured", drogon::k503ServiceUnavailable)); return;
     }
+    if (!proxyUpstreamLimiter().allow()) {
+        cb(errorResp("upstream rate limited", drogon::k429TooManyRequests)); return;
+    }
 
     // URL-encode spaces as +
     std::string encoded;
@@ -150,12 +189,11 @@ void WeatherProxy::search(
 
     std::string path = "/geo/1.0/direct?q=" + encoded + "&limit=5&appid=" + key;
 
-    auto client = drogon::HttpClient::newHttpClient("https://api.openweathermap.org");
     auto owmReq = drogon::HttpRequest::newHttpRequest();
     owmReq->setMethod(drogon::Get);
     owmReq->setPath(path);
 
-    client->sendRequest(owmReq, [cb, cacheKey](drogon::ReqResult res,
+    owmClient()->sendRequest(owmReq, [cb, cacheKey](drogon::ReqResult res,
                                                 const drogon::HttpResponsePtr& resp) {
         if (res != drogon::ReqResult::Ok || !resp || resp->statusCode() != drogon::k200OK) {
             cb(corsJson("{\"error\":\"upstream_failed\"}", drogon::k502BadGateway)); return;

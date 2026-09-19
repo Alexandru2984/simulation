@@ -89,7 +89,10 @@ int main() {
        .setLogLevel(trantor::Logger::kWarn)
        .addListener("127.0.0.1", 8094)
        .setThreadNum(4)
-       .setClientMaxBodySize(64 * 1024);
+       .setClientMaxBodySize(64 * 1024)
+       // Clients never send application messages. Keep control frames working
+       // while preventing ignored messages from consuming 128 KiB each.
+       .setClientMaxWebSocketMessageSize(4 * 1024);
 
     app.getLoop()->runEvery(1.0, []() { broadcastWeather(); });
     app.getLoop()->runEvery(1.0, []() { GridWsController::broadcastGrid(); });

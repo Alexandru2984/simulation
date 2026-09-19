@@ -8,6 +8,7 @@
 
 static std::mutex                                    wsGridMtx;
 static std::set<drogon::WebSocketConnectionPtr>      wsGridClients;
+static constexpr std::size_t                         MAX_GRID_WS_CLIENTS = 256;
 
 static drogon::HttpResponsePtr jsonResp(const std::string& body,
                                         drogon::HttpStatusCode code = drogon::k200OK) {
@@ -76,13 +77,24 @@ void GridWsController::handleNewConnection(
     const drogon::HttpRequestPtr& req,
     const drogon::WebSocketConnectionPtr& conn)
 {
-    auto origin = req->getHeader("Origin");
-    if (!origin.empty() && origin != Security::allowedOrigin()) {
+    const auto origin = req->getHeader("Origin");
+    if (!Security::originAllowed(origin, Security::allowedOrigin())) {
         conn->shutdown(drogon::CloseCode::kViolation, "forbidden origin");
         return;
     }
-    std::lock_guard<std::mutex> lk(wsGridMtx);
-    wsGridClients.insert(conn);
+
+    bool accepted = false;
+    {
+        std::lock_guard<std::mutex> lk(wsGridMtx);
+        if (wsGridClients.size() < MAX_GRID_WS_CLIENTS) {
+            wsGridClients.insert(conn);
+            accepted = true;
+        }
+    }
+    if (!accepted) {
+        conn->shutdown(drogon::CloseCode::kViolation, "connection limit reached");
+        return;
+    }
     conn->send(GridSim::instance().getStateJson());
 }
 
@@ -130,6 +142,11 @@ void GridRestController::forecast(
         }
         steps = std::max(1, std::min(200, (*j)["steps"].asInt()));
     }
+    static RateLimiter forecastLimiter(30.0, 5.0);
+    if (!forecastLimiter.allow()) {
+        cb(jsonResp("{\"error\":\"rate limited\"}", drogon::k429TooManyRequests));
+        return;
+    }
     cb(jsonResp(GridSim::instance().getForecast(steps)));
 }
 
@@ -138,10 +155,18 @@ void GridRestController::getHistory(
     std::function<void(const drogon::HttpResponsePtr&)>&& cb) const
 {
     int limit = 30;  // default: last 30 snapshots (~90 real seconds)
-    auto limitStr = req->getParameter("limit");
+    const auto limitStr = req->getParameter("limit");
     if (!limitStr.empty()) {
-        try { limit = std::max(1, std::min(120, std::stoi(limitStr))); }
-        catch (...) {}
+        if (!Security::parseIntInRange(limitStr, 1, 120, limit)) {
+            cb(jsonResp("{\"error\":\"limit must be an integer from 1 to 120\"}",
+                        drogon::k400BadRequest));
+            return;
+        }
+    }
+    static RateLimiter historyLimiter(30.0, 10.0);
+    if (!historyLimiter.allow()) {
+        cb(jsonResp("{\"error\":\"rate limited\"}", drogon::k429TooManyRequests));
+        return;
     }
     cb(jsonResp(GridSim::instance().getHistory(limit)));
 }

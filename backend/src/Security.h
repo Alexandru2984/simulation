@@ -1,9 +1,11 @@
 #pragma once
 
 #include <drogon/drogon.h>
+#include <charconv>
 #include <cmath>
 #include <cstdlib>
 #include <functional>
+#include <system_error>
 #include <string>
 #include <string_view>
 #include "RateLimiter.h"
@@ -20,12 +22,42 @@ inline bool originAllowed(std::string_view origin, std::string_view allowed) {
 
 inline bool isJsonContentType(std::string_view contentType) {
     constexpr std::string_view expected = "application/json";
-    return contentType.size() >= expected.size() &&
-           contentType.compare(0, expected.size(), expected) == 0;
+    const auto semicolon = contentType.find(';');
+    auto mediaType = contentType.substr(0, semicolon);
+    while (!mediaType.empty() && (mediaType.front() == ' ' || mediaType.front() == '\t'))
+        mediaType.remove_prefix(1);
+    while (!mediaType.empty() && (mediaType.back() == ' ' || mediaType.back() == '\t'))
+        mediaType.remove_suffix(1);
+
+    if (mediaType.size() != expected.size()) return false;
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        char c = mediaType[i];
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        if (c != expected[i]) return false;
+    }
+    return true;
 }
 
 inline bool finiteInRange(double value, double minimum, double maximum) {
     return std::isfinite(value) && value >= minimum && value <= maximum;
+}
+
+inline bool parseFiniteDouble(std::string_view input, double& value) {
+    if (input.empty() || input.size() > 64) return false;
+    const char* begin = input.data();
+    const char* end = begin + input.size();
+    const auto result = std::from_chars(begin, end, value, std::chars_format::general);
+    return result.ec == std::errc{} && result.ptr == end && std::isfinite(value);
+}
+
+inline bool parseIntInRange(std::string_view input, int minimum, int maximum,
+                            int& value) {
+    if (input.empty() || input.size() > 16) return false;
+    const char* begin = input.data();
+    const char* end = begin + input.size();
+    const auto result = std::from_chars(begin, end, value);
+    return result.ec == std::errc{} && result.ptr == end &&
+           value >= minimum && value <= maximum;
 }
 
 inline const std::string& allowedOrigin() {
