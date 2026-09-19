@@ -29,6 +29,11 @@ WeatherState WeatherSim::current() const {
     return state_;
 }
 
+double WeatherSim::modelTime() const {
+    std::lock_guard<std::mutex> lk(mtx_);
+    return tick_;
+}
+
 void WeatherSim::seed(double temp, double pressure, double wind_speed, double wind_dir) {
     double rad = wind_dir * M_PI / 180.0;
     std::lock_guard<std::mutex> lk(mtx_);
@@ -41,7 +46,7 @@ void WeatherSim::seed(double temp, double pressure, double wind_speed, double wi
     vy_ = wind_speed * std::sin(rad);
     // Align sinusoidal phase so next tick continues naturally from seed temp
     double ratio = std::max(-1.0, std::min(1.0, (temp - T_BASE) / T_AMP));
-    tick_ = static_cast<long long>(T_PERIOD * std::asin(ratio) / (2.0 * M_PI));
+    tick_ = T_PERIOD * std::asin(ratio) / (2.0 * M_PI);
 }
 
 void WeatherSim::setSpeed(double multiplier) {
@@ -83,8 +88,9 @@ void WeatherSim::loop() {
 
             state_ = { temp, pressure, speed, direction, ts };
 
-            // Advance by speed multiplier (whole ticks per second)
-            tick_ += static_cast<long long>(speed_.load());
+            // Advance by the exact multiplier, including supported values
+            // below 1x.
+            tick_ += speed_.load();
         }
         std::this_thread::sleep_until(next);
     }

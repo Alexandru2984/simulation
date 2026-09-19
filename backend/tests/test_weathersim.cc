@@ -34,6 +34,25 @@ TEST(speed_clamped_to_range) {
     sim.setSpeed(1.0);
 }
 
+TEST(fractional_speed_advances_model_time) {
+    auto& sim = WeatherSim::instance();
+    sim.stop();
+    sim.seed(20.0, 1013.25, 3.0, 0.0);
+    sim.setSpeed(0.5);
+    const double before = sim.modelTime();
+
+    sim.start();
+    for (int i = 0; i < 100 && sim.modelTime() == before; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    sim.stop();
+
+    const double advanced = sim.modelTime() - before;
+    require(advanced >= 0.5, "0.5x speed must advance model time");
+    require(std::fmod(advanced, 0.5) < 1e-9,
+            "fractional speed must not be rounded to whole ticks");
+    sim.setSpeed(1.0);
+}
+
 TEST(loop_produces_fresh_state) {
     auto& sim = WeatherSim::instance();
     sim.start();
@@ -52,6 +71,7 @@ int main() {
     RUN(seed_reflects_immediately);
     RUN(current_returns_independent_snapshot);
     RUN(speed_clamped_to_range);
+    RUN(fractional_speed_advances_model_time);
     RUN(loop_produces_fresh_state);   // keep last: starts/stops the sim thread
 
     printf("\n=== %d passed, %d failed ===\n\n", passed, failed);

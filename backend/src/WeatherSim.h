@@ -29,6 +29,7 @@ public:
     // Simulation speed multiplier (1x = real-time, 10x = 10s per tick)
     void setSpeed(double multiplier);
     double speed() const { return speed_.load(); }
+    double modelTime() const;
 
 private:
     WeatherSim();
@@ -50,8 +51,9 @@ private:
     // Wind momentum
     double vx_{3.0}, vy_{2.0};
 
-    // Simulation time counter (seconds)
-    long long tick_{0};
+    // Simulation time counter (seconds). This must retain fractional values:
+    // the public control supports 0.5x and truncating it would freeze the sim.
+    double tick_{0.0};
 
     // Speed multiplier
     std::atomic<double> speed_{1.0};
