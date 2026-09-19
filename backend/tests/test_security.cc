@@ -50,6 +50,11 @@ TEST(strict_number_parsing) {
             "integer below range must fail");
     require(!Security::parseIntInRange("121", 1, 120, integer),
             "integer above range must fail");
+    require(Security::parseIntInRange("65535", 1, 65535, integer) &&
+                integer == 65535,
+            "maximum TCP port must parse");
+    require(!Security::parseIntInRange("65536", 1, 65535, integer),
+            "port above range must fail");
 }
 
 // ── Origin ────────────────────────────────────────────────────────────────────

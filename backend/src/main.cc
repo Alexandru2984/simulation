@@ -7,6 +7,7 @@
 #include "GridController.h"
 #include "WeatherProxy.h"
 #include "SdNotify.h"
+#include "Security.h"
 
 void broadcastWeather();
 
@@ -27,6 +28,19 @@ static const std::string& historyPath() {
                                        : "/home/micu/simulation/state/history.snapshot");
     }();
     return path;
+}
+
+static int backendPort() {
+    constexpr int fallback = 8094;
+    const char* value = std::getenv("PORT_BACKEND");
+    if (!value || !*value) return fallback;
+
+    int port = fallback;
+    if (!Security::parseIntInRange(value, 1, 65535, port)) {
+        LOG_WARN << "Ignoring invalid PORT_BACKEND; using " << fallback;
+        return fallback;
+    }
+    return port;
 }
 
 // 20 cities spread across the globe for data assimilation
@@ -85,9 +99,13 @@ int main() {
     GridSim::instance().start();
 
     auto& app = drogon::app();
-    app.setLogPath("/home/micu/simulation/logs")
+    const int port = backendPort();
+    app.setLogPath("")  // systemd captures stdout/stderr and owns rotation
+       // PrivateTmp gives the service a writable, isolated upload directory.
+       // Drogon prepares this tree even though this API has no file uploads.
+       .setUploadPath("/tmp/simulation-uploads")
        .setLogLevel(trantor::Logger::kWarn)
-       .addListener("127.0.0.1", 8094)
+       .addListener("127.0.0.1", port)
        .setThreadNum(4)
        .setClientMaxBodySize(64 * 1024)
        // Clients never send application messages. Keep control frames working
@@ -114,7 +132,7 @@ int main() {
         }
     });
 
-    LOG_INFO << "Weather Simulation Backend starting on 127.0.0.1:8094";
+    LOG_INFO << "Weather Simulation Backend starting on 127.0.0.1:" << port;
     app.run();
 
     WeatherSim::instance().stop();
