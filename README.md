@@ -18,7 +18,12 @@ A full-stack production application combining a **C++ atmospheric simulation eng
 | **Storm Tour** | Auto-fly camera to each detected active storm every 8 seconds |
 | **City Search** | Geocoded search with keyboard navigation, fly-to animation, city pin on globe |
 | **Time Navigator** | Forecast (run ahead 100 physics steps) + History replay with play/pause/speed controls |
-| **Mobile** | Responsive UI — top bar + bottom sheet on mobile, full panel layout on desktop |
+| **Live Together** | One shared world: online-viewer count and a live feed of everyone's injections, with fly-to on click |
+| **Sharing** | The URL hash keeps the view (`#lat=44.43&lon=26.10&layer=temp`); share via the native share sheet or clipboard, PNG screenshots |
+| **Mobile** | Phone layout with a compact top bar, a swipeable bottom sheet and floating actions. Desktop and tablet use docked panels. Safe-area aware |
+| **Settings** | °C/°F, m/s · km/h · mph · kn and graphics quality (auto/low/high). The globe honours `prefers-reduced-motion` |
+| **Keyboard** | `1`–`7` layers, `/` search, `e` event panel, `t` storm tour, `r` reset view, `+`/`−` zoom, `f` fullscreen, `s` screenshot, `l` back to live, `?` help, `Esc` closes the topmost layer |
+| **SEO & PWA** | Canonical/Open Graph/Twitter metadata, JSON-LD, sitemap, robots, installable web manifest, real 404s |
 
 ---
 
@@ -60,12 +65,13 @@ A full-stack production application combining a **C++ atmospheric simulation eng
   Frontend (React + Three.js/WebGL)
   ├── EarthGlobe.jsx      — Custom GLSL shaders: day/night, specular, temperature tint
   ├── Atmosphere.jsx      — Fresnel atmospheric glow shader
-  ├── CloudLayer.jsx      — Animated instanced cloud mesh
+  ├── CloudLayer.jsx      — Sun-lit cloud shell driven by the humidity field
   ├── WindParticles.jsx   — GPU-driven wind flow particles
   ├── RainParticles.jsx   — Precipitation particle system
   ├── GridOverlay.jsx     — Per-cell weather heatmap overlay
   ├── WindField.jsx       — Instanced arrow field (36×72)
-  ├── StormLabels.jsx     — HTML labels for detected storms
+  ├── GlobeLabel.jsx      — DOM labels projected from 3D with horizon culling
+  ├── StormLabels.jsx     — Labels for the deepest detected storms
   ├── FrontalLayer.jsx    — Weather front boundaries
   ├── ForecastPanel.jsx   — Forecast + History with auto-replay
   └── SearchBar.jsx       — Geocoded city search (keyboard nav)
@@ -81,7 +87,7 @@ The simulation runs a **36×72 global grid** (2,592 cells, 5° resolution) at **
 
 **1. Solar Insolation**
 ```
-T_eq(lat) = 38·cos²(lat) − 25      [°C, equatorial warmth]
+T_eq(lat) = 45·cos²(lat) − 18      [°C, ≈ 27 °C at the equator, −18 °C at the poles]
 dT/dt|solar = (T_eq + 18·max(0, cos(ha)·cos(lat)) − T) · 0.003
 ```
 Where `ha` = hour angle = simTime/3600 · 2π + longitude
@@ -94,15 +100,22 @@ dT/dt|diff = (T̄_neighbors − T) · 0.12
 **3. Pressure Relaxation**
 ```
 P_target = 1013.25 + 1.5·(T − 15)   [hPa]
-dP/dt = (P_target − P) · 0.8
+dP/dt = (P_target − P) · 0.05
 ```
+Slow relaxation lets injected lows and highs live long enough to drive winds.
 
-**4. Pressure Gradient Force + Coriolis**
+**4. Pressure Gradient Force + Coriolis + Friction**
 ```
-dU/dt = −∂P/∂x · k + f·V
-dV/dt = −∂P/∂y · k − f·U
-f = 2·Ω·sin(lat)     [Coriolis parameter, Ω = 7.2921×10⁻⁵ rad/s]
+(u, v) = (U, V) − ∇P · 0.5 · dt                 [pressure-gradient acceleration]
+(U, V) ← R(−f·s·dt) · (u, v) · (1 − 0.08·dt)    [exact Coriolis rotation, linear drag]
+f = 2·Ω·sin(lat),  Ω = 7.2921×10⁻⁵ rad/s,  s = 2000 (time-scale factor)
 ```
+Coriolis is applied as an exact rotation. Forward Euler on `f·V`/`−f·U`
+inflates `|v|` by `√(1 + (f·dt)²)` every step and pinned the whole grid at the
+70 m/s clamp. With drag, the flow settles into a geostrophic/Ekman balance
+`|v| = PGF / √(k² + f²)`: mean winds ≈ 10 m/s, mid-latitude westerlies, a
+global mean temperature ≈ 15 °C. Tests in `backend/tests/test_gridsim.cc` cover
+these properties.
 
 **5. Upwind Temperature Advection**
 ```
@@ -124,10 +137,11 @@ w_ij = exp(−(Δr² + Δc²) / (2 · 2.25))
 ```
 
 **8. Storm Detection**
-A cyclone is identified when:
+A cyclone is identified at a local pressure minimum when:
 ```
-P_cell < P_zonal_mean − 8 hPa  AND  |V_wind| > 15 m/s
+P_cell − P_zonal_mean < −6 hPa  AND  max |V| over the 3×3 neighbourhood ≥ 7 m/s
 ```
+The eyewall maximum is used because a cyclone's eye is calm.
 Frontal boundaries are detected via temperature gradient anomalies above threshold.
 
 ---
@@ -145,7 +159,12 @@ Frontal boundaries are detected via temperature gradient anomalies above thresho
 | `POST` | `/api/grid/inject` | Inject weather event `{type, lat, lon, intensity}` |
 | `POST` | `/api/grid/forecast` | Run N steps ahead, return snapshots |
 | `GET` | `/api/grid/history` | Last 30–120 recorded grid snapshots |
-| `GET` | `/api/metrics` | Runtime metrics: tick, simTime, wsClients, version |
+| `GET` | `/api/grid/history?limit=N` | `N` = 1–120 |
+| `GET` | `/api/metrics` | Runtime metrics: tick, simTime, wsClients, assimilation. **Operator-only:** 127.0.0.1, `404` through nginx |
+| `GET` | `/api/version` | Build SHA, build time, uptime. **Operator-only:** 127.0.0.1, `404` through nginx |
+| `GET` | `/api/weather/realtime?lat=&lon=` | Live observation for a point, through the budgeted OpenWeather gateway (cached) |
+| `GET` | `/api/weather/search?q=` | City geocoding (normalised, length-limited query; cached) |
+| `GET` | `/api/weather/locations` | The seed cities shown as chips |
 | `POST` | `/api/weather/seed` | Fetch OWM data for lat/lon + assimilate |
 | `POST` | `/api/weather/speed` | Set simulation speed multiplier (0.5–50×) |
 
@@ -154,7 +173,34 @@ Frontal boundaries are detected via temperature gradient anomalies above thresho
 | Path | Payload | Frequency |
 |---|---|---|
 | `/ws/weather` | `{temperature, pressure, wind_speed, wind_direction}` | 1 Hz |
-| `/ws/grid` | Full grid state JSON (all 2592 cells) | 1 Hz |
+| `/ws/grid` | Full grid state JSON (all 2592 cells, ~100 KB) | 1 Hz |
+| `/ws/grid?format=bin1` | The same frame as binary `GSB1` (~38 KB); used by the frontend | 1 Hz |
+
+Grid frames (JSON and binary) also carry `speed`, `viewers` (open grid
+sockets), `serverTime` (unix seconds) and `events` (recent injections:
+id, type, lat, lon, intensity, time). The expensive part of a frame is built
+once per grid version and shared by every client. Idle sockets are dropped
+after `SIM_WS_IDLE_SECONDS` (default 75 s) without answering a ping.
+
+`GSB1` layout, little-endian (see `backend/src/GridCodec.h` and
+`frontend/src/utils/gridCodec.js`):
+
+```
+0   char[4]  "GSB1"
+4   u32      header length N
+8   N bytes  UTF-8 JSON header: the JSON frame without arrays, plus
+             "fields": [[name, scale, offset], ...]
+    zero padding to a 4-byte boundary
+    int16[fields × rows × cols], field-major; value = q / scale + offset
+```
+
+### Errors
+
+Errors are JSON: `{"error": "..."}`. The OpenWeather-backed endpoints and
+framework-level failures use stable snake_case codes: `invalid_query`,
+`invalid_lat_lon`, `lat_lon_out_of_range`, `upstream_rate_limited`,
+`upstream_failed`, `not_found`, `method_not_allowed`, `payload_too_large`, and
+so on. Responses never include the framework name or version.
 
 ### Event Types (POST `/api/grid/inject`)
 ```json
@@ -221,7 +267,16 @@ OPENWEATHER_API_KEY=your_openweathermap_key
 SIM_ALLOWED_ORIGIN=https://simulation.micutu.com
 # Optional: requires X-Simulation-Token on mutating endpoints when set.
 SIM_MUTATION_TOKEN=change-me
+# Optional overrides
+SIM_STATE_FILE=/srv/.../state/grid.snapshot      # persisted world
+SIM_HISTORY_FILE=/srv/.../state/history.snapshot # persisted history ring
+SIM_WS_IDLE_SECONDS=75                           # 3–3600, idle socket eviction
+OPENWEATHER_BASE_URL=https://api.openweathermap.org  # for tests/staging only
 ```
+
+Every OpenWeather call goes through one gateway: a global budget (40/min),
+response caching and response-size limits. A flood of popups or searches can
+therefore never exhaust the API key.
 
 The production file is root-owned, mode `0600`, and is never stored in Git.
 
@@ -237,7 +292,12 @@ simulation/
 │   └── src/
 │       ├── main.cc              — Drogon app bootstrap, OWM assimilation scheduler
 │       ├── GridSim.h / .cc      — Physics engine (36×72 grid, 10 Hz loop) + state snapshots
+│       ├── GridCodec.h          — Cached JSON/GSB1 frame encoding
 │       ├── GridController.h/.cc — REST + WebSocket handlers for grid
+│       ├── EventLog.h           — Recent injections for the live feed
+│       ├── WsHub.h              — Socket registry with idle eviction
+│       ├── OpenWeatherClient.h/.cc — Budgeted, cached OpenWeather gateway
+│       ├── TtlCache.h           — Small TTL cache for upstream responses
 │       ├── HealthController.h/.cc — liveness/readiness endpoints
 │       ├── Security.h           — origin / content-type / token checks
 │       ├── RateLimiter.h        — global token buckets for mutating endpoints
@@ -248,12 +308,15 @@ simulation/
 │       └── SeedController.h/.cc — City seeding endpoint
 ├── frontend/
 │   ├── package.json
-│   ├── vite.config.js
+│   ├── vite.config.js           — vendor chunk splitting
+│   ├── index.html               — SEO metadata, JSON-LD, static splash
+│   ├── public/                  — textures (WebP), icons, manifest, robots, sitemap, 404, og-image
+│   ├── scripts/render-assets.mjs — regenerates icons and the social preview
 │   └── src/
-│       ├── App.jsx
-│       ├── components/          — 15+ React/Three.js components
-│       ├── hooks/               — useWeatherSocket, useGridSocket
-│       └── utils/geoUtils.js    — Grid coordinate math
+│       ├── App.jsx              — state, URL hash, shortcuts, layout switch
+│       ├── components/          — globe layers, desktop HUD, MobileHUD, dialogs
+│       ├── hooks/               — resilient sockets, fullscreen, layout, prefs
+│       └── utils/               — pure, unit-tested helpers (geo, codec, overlay, units)
 ├── deploy/
 │   ├── logrotate/
 │   │   └── weather-backend
@@ -276,7 +339,9 @@ simulation/
 
 ## 🔐 Security
 
-- **Nginx**: HSTS with `preload`, CSP, `X-Frame-Options`, `X-Content-Type-Options`, rate limiting (10 req/s burst 20)
+- **Nginx**: HSTS with `preload`, strict CSP (no inline scripts), deny-by-default `Permissions-Policy`, COOP/CORP, `X-Frame-Options`, `X-Content-Type-Options`, per-IP rate limits (429), real 404s, operator endpoints hidden, dotfiles never served
+- **Origin guard**: only Cloudflare can reach the origin; direct requests get `403`
+- **OpenWeather**: one budgeted gateway with caching, query normalisation and response-size limits; constant-time token comparison for `SIM_MUTATION_TOKEN`
 - **TLS**: TLS 1.2 + 1.3 only (1.0/1.1 disabled)
 - **Backend**: Bound to `127.0.0.1:8094` only (not externally reachable); global token buckets on mutations
 - **systemd**: `simulation-canary.service` includes `NoNewPrivileges`, `PrivateTmp`, `PrivateDevices`, `ProtectSystem=strict`, `ProtectHome=read-only`, narrow writable log/state paths, `SystemCallFilter=@system-service`, an empty capability set, and `UMask=0077`
