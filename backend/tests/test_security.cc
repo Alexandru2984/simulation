@@ -1,5 +1,6 @@
 // Unit tests for the Security helpers and the global rate limiter
 #include "Security.h"
+#include "ClientErrors.h"
 #include "RateLimiter.h"
 #include "OpenWeatherObservation.h"
 #include "OpenWeatherResponse.h"
@@ -313,6 +314,121 @@ TEST(wind_direction_uses_meteorological_convention) {
     require(std::fabs(U + 10.0f) < 1e-4f, "90 deg must move west");
 }
 
+// ── Client error reports ──────────────────────────────────────────────────────
+
+static const char* ORIGIN = "https://simulation.micutu.com";
+
+TEST(client_error_report_is_parsed_and_scrubbed) {
+    ClientErrors::Report r;
+    require(ClientErrors::parseReport(
+        R"({"kind":"error","message":"  TypeError: x is undefined\n","stack":"at f (/assets/a.js:1:2)\nat g","source":"https://simulation.micutu.com/assets/index-AbC.js?v=1#lat=44","line":12,"col":7,"build":"index-AbC","extra":"ignored"})",
+        ORIGIN, r), "a well-formed report is accepted");
+    require(r.kind == "error", "kind kept");
+    require(r.message == "TypeError: x is undefined", "message trimmed, newline removed");
+    require(r.stack == "at f (/assets/a.js:1:2)\nat g", "stack keeps its lines");
+    require(r.source == "/assets/index-AbC.js", "source reduced to a path without query or hash");
+    require(r.line == 12 && r.col == 7 && r.build == "index-AbC", "position and build kept");
+}
+
+TEST(client_error_report_rejects_malformed_input) {
+    ClientErrors::Report r;
+    const char* bad[] = {
+        "", "[]", "not json", R"({"message":"m"})",
+        R"({"kind":"other","message":"m"})",
+        R"({"kind":"error"})",
+        R"({"kind":"error","message":"   "})",
+        R"({"kind":"error","message":7})",
+        R"({"kind":"error","message":"m","line":-1})",
+        R"({"kind":"error","message":"m","line":1.5})",
+        R"({"kind":"error","message":"m","col":"3"})",
+        R"({"kind":"error","message":"m","stack":["a"]})",
+        R"({"kind":"error","message":"m","build":"../../etc"})",
+        R"({"kind":"error","message":"m","kind":"error"})",
+        R"({"kind":"error","message":"m","a":{"b":{"c":{"d":{"e":{"f":{"g":{"h":{"i":1}}}}}}}}})",
+    };
+    for (const char* body : bad)
+        require(!ClientErrors::parseReport(body, ORIGIN, r), body);
+    const std::string huge = std::string(R"({"kind":"error","message":")") +
+                             std::string(9000, 'a') + "\"}";
+    require(!ClientErrors::parseReport(huge, ORIGIN, r), "bodies over 8 KiB are refused");
+}
+
+TEST(client_error_text_cannot_forge_log_lines) {
+    // Newlines, carriage returns, bidi overrides, zero-width characters and
+    // invalid UTF-8 never reach the log as such.
+    const auto msg = ClientErrors::cleanText(
+        "a\r\nfake_line\x1b[31m\xE2\x80\xAE" "evil\xE2\x80\x8B\xFF", 300, false);
+    require(msg.find('\n') == std::string::npos && msg.find('\r') == std::string::npos,
+            "no line breaks in a message");
+    require(msg.find('\x1b') == std::string::npos, "no terminal escapes");
+    require(msg.find("\xE2\x80\xAE") == std::string::npos, "no bidi override");
+    require(msg.find("\xE2\x80\x8B") == std::string::npos, "no zero-width space");
+    require(msg.find("\xEF\xBF\xBD") != std::string::npos, "invalid UTF-8 becomes U+FFFD");
+
+    ClientErrors::Report r;
+    r.kind = "error";
+    r.message = "line one\nline two \xC8\x99";  // ș
+    ClientErrors::Decision d;
+    d.fingerprint = "f";
+    d.count = 1;
+    const auto line = ClientErrors::logLine(r, d, "UA\nInjected", "abc");
+    require(line.rfind("client_error {", 0) == 0, "log line has a fixed prefix");
+    require(line.find('\n') == std::string::npos, "one physical line");
+    for (const unsigned char c : line) require(c >= 0x20 && c < 0x7F, "log line is printable ASCII");
+}
+
+TEST(client_error_text_truncates_on_character_boundaries) {
+    const std::string s = ClientErrors::cleanText(std::string(200, 'x') + std::string(100, '\xC8') , 50, false);
+    require(s.size() <= 53, "bounded");
+    std::string ro;
+    for (int i = 0; i < 40; ++i) ro += "\xC8\x99";  // 80 bytes of "ș"
+    const auto t = ClientErrors::cleanText(ro, 11, false);
+    require(t == "\xC8\x99\xC8\x99\xC8\x99\xC8\x99\xC8\x99\xE2\x80\xA6", "cut between characters, then …");
+}
+
+TEST(client_error_sources_are_paths_on_this_site) {
+    using ClientErrors::cleanSource;
+    require(cleanSource("https://simulation.micutu.com/assets/x.js", ORIGIN) == "/assets/x.js", "own origin");
+    require(cleanSource("/assets/x.js?q=1", ORIGIN) == "/assets/x.js", "query dropped");
+    require(cleanSource("chrome-extension://abc/content.js", ORIGIN) == "external", "extension");
+    require(cleanSource("https://evil.example/x.js", ORIGIN) == "external", "other origin");
+    require(cleanSource("https://simulation.micutu.com.evil.example/x.js", ORIGIN) == "external", "lookalike origin");
+    require(cleanSource("//evil.example/x.js", ORIGIN) == "external", "protocol-relative");
+    require(cleanSource("/a b<script>", ORIGIN) == "external", "odd characters");
+    require(cleanSource("", ORIGIN).empty(), "absent stays absent");
+}
+
+TEST(client_error_store_folds_repeats_and_throttles_logs) {
+    ClientErrors::Store store(3, 600, 2.0);  // 3 fingerprints, 2 log lines per minute
+    ClientErrors::Report a;
+    a.kind = "error";
+    a.message = "boom";
+    auto d1 = store.record(a, 1000);
+    auto d2 = store.record(a, 1001);
+    require(d1.log && d1.count == 1, "first occurrence is logged");
+    require(!d2.log && d2.count == 2, "repeats are counted, not logged");
+    require(d1.fingerprint == d2.fingerprint, "same bug, same fingerprint");
+    require(store.record(a, 1000 + 600).log, "logged again after the quiet period");
+
+    ClientErrors::Report b = a, c = a, e = a;
+    b.message = "other";
+    c.message = "third";
+    e.message = "fourth";
+    require(store.record(b, 1700).log, "a second distinct error is logged");
+    require(store.record(c, 1700).log, "a third one fits the budget");
+    require(!store.record(e, 1700).log, "the shared line budget stops a flood");
+    require(store.counters().logSuppressed == 1, "suppressed lines are counted");
+
+    const auto counters = store.counters();
+    require(counters.distinct == 3, "the store never exceeds its capacity");
+    require(counters.received == 6, "every accepted report is counted");
+
+    const auto summary = store.summary(10);
+    require(summary["errors"].size() == 3, "summary lists what is kept");
+    require(summary["errors"][0]["count"].asUInt64() >= summary["errors"][1]["count"].asUInt64(),
+            "most frequent first");
+}
+
 int main() {
     printf("\n=== Security Unit Tests ===\n\n");
 
@@ -335,6 +451,12 @@ int main() {
     RUN(rounded_coordinates_share_cache_entries);
     RUN(ttl_cache_expires_and_stays_bounded);
     RUN(wind_direction_uses_meteorological_convention);
+    RUN(client_error_report_is_parsed_and_scrubbed);
+    RUN(client_error_report_rejects_malformed_input);
+    RUN(client_error_text_cannot_forge_log_lines);
+    RUN(client_error_text_truncates_on_character_boundaries);
+    RUN(client_error_sources_are_paths_on_this_site);
+    RUN(client_error_store_folds_repeats_and_throttles_logs);
 
     printf("\n=== %d passed, %d failed ===\n\n", passed, failed);
     return failed > 0 ? 1 : 0;

@@ -45,6 +45,7 @@ add_executable(weather_backend
     src/GridController.cc
     src/WeatherProxy.cc
     src/OpenWeatherClient.cc
+    src/ClientErrorController.cc
 )
 
 # ── Unit tests ────────────────────────────────────────────────────────────────

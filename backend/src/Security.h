@@ -210,6 +210,16 @@ inline bool hasAllowedOrigin(const drogon::HttpRequestPtr& req) {
     return origin.empty() || origin == allowedOrigin();
 }
 
+// Operator endpoints answer only requests made on this host straight to the
+// backend port. nginx adds X-Real-IP and X-Forwarded-For to everything it
+// proxies, so a proxied request is refused even if a vhost forgets to block
+// the path.
+inline bool isDirectLocalRequest(const drogon::HttpRequestPtr& req) {
+    return req->peerAddr().isLoopbackIp() &&
+           req->getHeader("X-Real-IP").empty() &&
+           req->getHeader("X-Forwarded-For").empty();
+}
+
 inline bool hasJsonContentType(const drogon::HttpRequestPtr& req) {
     return isJsonContentType(req->getHeader("Content-Type"));
 }

@@ -175,9 +175,13 @@ What the vhost enforces:
   and `404.html` are `no-cache`.
 - `gzip` for CSS/JS/JSON/SVG/XML/manifest. The global config only covers
   `text/html`.
-- `/api/metrics` and `/api/version` return `404` publicly, because they
-  reveal the build SHA, build time and uptime. `scripts/deploy.sh` and
-  `scripts/export-metrics.sh` read them on `127.0.0.1:8094`.
+- `/api/metrics`, `/api/version` and `/api/ops/*` return `404` publicly,
+  because they reveal the build SHA, build time, uptime and browser error
+  details. `scripts/deploy.sh` and `scripts/export-metrics.sh` read them on
+  `127.0.0.1:8094`.
+- `/api/client-errors` (browser error reports) has its own per-IP limit
+  (12/min, burst 10) and a 16 KiB body cap, so a crash loop cannot use up the
+  API budget.
 - Rate-limited requests get `429` rather than `503`. Dotfiles are never served.
 - Every location that sets its own header re-includes the security-header
   snippet, because nginx drops server-level `add_header` in such locations.
@@ -223,6 +227,7 @@ curl -fsS https://simulation.micutu.com/api/healthz
 curl -fsS https://simulation.micutu.com/api/readyz
 curl -fsS http://127.0.0.1:8094/api/version   # operator-only, 404 publicly
 curl -fsS http://127.0.0.1:8094/api/metrics   # operator-only, 404 publicly
+curl -fsS http://127.0.0.1:8094/api/ops/client-errors | jq '.received, .errors[:3]'
 curl -fsS -D - -o /dev/null https://simulation.micutu.com/
 systemctl is-active simulation-canary.service
 journalctl -u simulation-canary.service --since '-10 minutes' --no-pager
@@ -287,6 +292,31 @@ sudo systemctl reset-failed simulation-canary.service
 sudo systemctl start simulation-canary.service
 ```
 
+### Browser errors
+
+The frontend reports uncaught errors, crashed views (error boundary) and grid
+frames it cannot decode to `POST /api/client-errors`. The backend validates and
+scrubs each report, folds identical ones by fingerprint, and logs one line per
+fingerprint at most every 10 minutes (and at most 20 lines a minute overall):
+
+```bash
+journalctl -u simulation-canary.service --since -1h | grep client_error
+curl -fsS 'http://127.0.0.1:8094/api/ops/client-errors?limit=20' | jq
+```
+
+Each line is `client_error {json}` with `kind` (`error`, `rejection`, `render`,
+`stream`), `message`, `stack`, `source`, `build` (the hashed entry bundle, e.g.
+`index-Ct21Fx80`, which tells a stale tab apart from the current release),
+`count`, `userAgent` and `backend` (the backend's commit). The summary keeps the
+200 most recently seen fingerprints in memory; it resets on restart.
+`/api/metrics` and the textfile export carry the counters
+(`weather_backend_client_errors_total` and friends): a jump after a deploy is
+the signal to look.
+
+Nothing that identifies a visitor is stored: no IP address, no cookies, and no
+page URL (its hash holds the place being viewed). URLs in stacks are cut to
+paths. nginx's access log still records IPs, as for every request.
+
 ### Optional failure email
 
 The supplied alert unit sends to `ALERT_EMAIL` through SMTP on
@@ -314,7 +344,8 @@ drop-in uninstalled and rely on the external readiness monitor.
 ### Optional Prometheus textfile export
 
 `weather-metrics.timer` can export backend availability, tick/time/speed,
-WebSocket clients, uptime and OWM assimilation counters every 30 seconds. Do
+WebSocket clients, uptime, OWM assimilation and browser error counters every 30
+seconds. Do
 not enable it merely because something listens on port 9100: first verify that
 the intended node_exporter responds, has the textfile collector enabled, and
 can see the same host directory used by `TEXTFILE_DIR`.

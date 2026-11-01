@@ -213,8 +213,9 @@ for endpoint in healthz readyz; do
     fi
 done
 
-# Build SHA, build time and uptime stay on 127.0.0.1 (deploy.sh, export-metrics.sh).
-for endpoint in metrics version; do
+# Build SHA, build time, uptime and the client error summary stay on
+# 127.0.0.1 (deploy.sh, export-metrics.sh).
+for endpoint in metrics version ops/client-errors; do
     status="$(http_code "https://${domain}/api/${endpoint}")"
     expect_equal "$status" 404 "/api/${endpoint} is not exposed publicly" "/api/${endpoint} returned "
 done
@@ -236,6 +237,9 @@ if rg -qi 'drogon' <<<"$api_404"; then
 else
     pass "backend 404 does not reveal the framework"
 fi
+
+report_status="$(http_code -X POST -H "Origin: https://evil.example" -H 'Content-Type: application/json' --data '{"kind":"error","message":"audit"}' "https://${domain}/api/client-errors")"
+expect_equal "$report_status" 403 "error reports from other origins are rejected" "foreign error report returned "
 
 no_origin_status="$(http_code -X POST -H 'Content-Type: application/json' --data '{"value":1}' "https://${domain}/api/weather/speed")"
 expect_equal "$no_origin_status" 403 "mutation without Origin is rejected" "mutation without Origin returned "

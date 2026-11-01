@@ -32,6 +32,14 @@ emit_help() {
 # TYPE weather_backend_assimilation_upstream_failures_total counter
 # HELP weather_backend_assimilation_validation_failures_total Rejected OWM payloads since process start.
 # TYPE weather_backend_assimilation_validation_failures_total counter
+# HELP weather_backend_client_errors_total Browser error reports accepted since process start.
+# TYPE weather_backend_client_errors_total counter
+# HELP weather_backend_client_errors_rejected_total Malformed or foreign error reports refused.
+# TYPE weather_backend_client_errors_rejected_total counter
+# HELP weather_backend_client_errors_rate_limited_total Error reports dropped by the global budget.
+# TYPE weather_backend_client_errors_rate_limited_total counter
+# HELP weather_backend_client_errors_distinct Distinct browser errors currently tracked.
+# TYPE weather_backend_client_errors_distinct gauge
 EOF
 }
 
@@ -48,7 +56,11 @@ if json="$(curl -fsS --max-time 5 "${backend}/api/metrics" 2>/dev/null)"; then
             "weather_backend_assimilation_last_success_unixtime \(.assimilationLastSuccessUnix)",
             "weather_backend_assimilation_accepted_total \(.assimilationAccepted)",
             "weather_backend_assimilation_upstream_failures_total \(.assimilationUpstreamFailures)",
-            "weather_backend_assimilation_validation_failures_total \(.assimilationValidationFailures)"
+            "weather_backend_assimilation_validation_failures_total \(.assimilationValidationFailures)",
+            "weather_backend_client_errors_total \(.clientErrorsReceived // 0)",
+            "weather_backend_client_errors_rejected_total \(.clientErrorsRejected // 0)",
+            "weather_backend_client_errors_rate_limited_total \(.clientErrorsRateLimited // 0)",
+            "weather_backend_client_errors_distinct \(.clientErrorsDistinct // 0)"
         ' <<<"$json"
     } > "$tmp"
 else

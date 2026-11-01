@@ -1,5 +1,6 @@
 #include "GridController.h"
 #include "AssimilationStatus.h"
+#include "ClientErrors.h"
 #include "EventLog.h"
 #include "GridSim.h"
 #include "WeatherSim.h"
@@ -259,7 +260,8 @@ void GridRestController::getMetrics(
     const std::size_t clients = gridHub().size();
 
     const auto& assimilation = AssimilationStatus::instance();
-    char buf[1024];
+    const auto clientErrors = ClientErrors::store().counters();
+    char buf[1280];
     snprintf(buf, sizeof(buf),
         "{\"tick\":%lld,\"simTime\":%.1f,\"simSpeed\":%.1f,"
         "\"rows\":%d,\"cols\":%d,\"gridCells\":%d,"
@@ -269,6 +271,8 @@ void GridRestController::getMetrics(
         "\"assimilationAccepted\":%llu,"
         "\"assimilationUpstreamFailures\":%llu,"
         "\"assimilationValidationFailures\":%llu,"
+        "\"clientErrorsReceived\":%llu,\"clientErrorsRejected\":%llu,"
+        "\"clientErrorsRateLimited\":%llu,\"clientErrorsDistinct\":%zu,"
         "\"version\":\"1.0\",\"gitSha\":\"%s\",\"gitDirty\":%s,"
         "\"buildTimeUtc\":\"%s\",\"status\":\"ok\"}",
         (long long)sim.tick(),
@@ -282,6 +286,10 @@ void GridRestController::getMetrics(
         (unsigned long long)assimilation.accepted(),
         (unsigned long long)assimilation.upstreamFailures(),
         (unsigned long long)assimilation.validationFailures(),
+        (unsigned long long)clientErrors.received,
+        (unsigned long long)clientErrors.rejected,
+        (unsigned long long)clientErrors.rateLimited,
+        clientErrors.distinct,
         RuntimeInfo::buildGitSha(),
         RuntimeInfo::buildGitDirtyJson(),
         RuntimeInfo::buildTimeUtc());

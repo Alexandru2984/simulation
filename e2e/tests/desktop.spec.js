@@ -80,3 +80,26 @@ test('keyboard: help dialog opens with ? and closes with Escape', async ({ page 
 
   expect(errors).toEqual([])
 })
+
+test('an uncaught error is reported anonymously, once', async ({ page }) => {
+  await openApp(page, '#lat=44.43&lon=26.10&layer=temp')
+  const reports = []
+  page.on('request', req => {
+    if (req.method() === 'POST' && new URL(req.url()).pathname === '/api/client-errors') reports.push(req)
+  })
+  const first = page.waitForResponse(res => new URL(res.url()).pathname === '/api/client-errors')
+  await page.evaluate(() => {
+    for (let i = 0; i < 3; i++) setTimeout(() => { throw new TypeError('e2e probe') }, 0)
+  })
+  expect((await first).status()).toBe(204)
+  await page.waitForTimeout(500)
+
+  expect(reports).toHaveLength(1)
+  const body = reports[0].postDataJSON()
+  expect(body.kind).toBe('error')
+  expect(body.message).toBe('TypeError: e2e probe')
+  expect(body.build).toMatch(/^index-[\w-]+$/)
+  // No viewed coordinates, no page URL, no host name.
+  expect(JSON.stringify(body)).not.toMatch(/lat=|lon=|127\.0\.0\.1/)
+  expect(reports[0].headers().cookie).toBeUndefined()
+})

@@ -69,7 +69,7 @@ test('SEO and PWA files are served with the right types', async ({ request }) =>
 })
 
 test('operator endpoints and dotfiles are not public', async ({ request }) => {
-  for (const path of ['/api/metrics', '/api/version']) {
+  for (const path of ['/api/metrics', '/api/version', '/api/ops/client-errors']) {
     const res = await request.get(path)
     expect(res.status(), path).toBe(404)
     expect(await res.json(), path).toEqual({ error: 'not_found' })
@@ -124,4 +124,22 @@ test('city search rejects junk and proxies real queries', async ({ request }) =>
   expect(res.status()).toBe(200)
   const body = await res.json()
   expect(JSON.stringify(body)).toContain('Bucuresti')
+})
+
+test('error reports are accepted from the site only', async ({ request, baseURL }) => {
+  const origin = new URL(baseURL).origin
+  const report = { kind: 'error', message: 'edge probe', source: '/assets/index-x.js', line: 1, col: 2 }
+  expect((await request.post('/api/client-errors', { headers: { Origin: origin }, data: report })).status()).toBe(204)
+  expect((await request.post('/api/client-errors', {
+    headers: { Origin: 'https://evil.example' }, data: report,
+  })).status()).toBe(403)
+  expect((await request.post('/api/client-errors', {
+    headers: { Origin: origin, 'Content-Type': 'text/plain' }, data: JSON.stringify(report),
+  })).status()).toBe(415)
+  const invalid = await request.post('/api/client-errors', { headers: { Origin: origin }, data: { kind: 'nope', message: 'x' } })
+  expect(invalid.status()).toBe(400)
+  expect(await invalid.json()).toEqual({ error: 'invalid_report' })
+  expect((await request.post('/api/client-errors', {
+    headers: { Origin: origin }, data: { ...report, stack: 'x'.repeat(20_000) },
+  })).status()).toBe(413)
 })

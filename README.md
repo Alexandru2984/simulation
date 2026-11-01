@@ -24,6 +24,7 @@ A full-stack production application combining a **C++ atmospheric simulation eng
 | **Settings** | °C/°F, m/s · km/h · mph · kn and graphics quality (auto/low/high). The globe honours `prefers-reduced-motion` |
 | **Keyboard** | `1`–`7` layers, `/` search, `e` event panel, `t` storm tour, `r` reset view, `+`/`−` zoom, `f` fullscreen, `s` screenshot, `l` back to live, `?` help, `Esc` closes the topmost layer |
 | **SEO & PWA** | Canonical/Open Graph/Twitter metadata, JSON-LD, sitemap, robots, installable web manifest, real 404s |
+| **Error reporting** | Uncaught browser errors, crashed views and undecodable frames are reported anonymously to the backend, de-duplicated and logged with a count |
 
 ---
 
@@ -162,6 +163,8 @@ Frontal boundaries are detected via temperature gradient anomalies above thresho
 | `GET` | `/api/grid/history?limit=N` | `N` = 1–120 |
 | `GET` | `/api/metrics` | Runtime metrics: tick, simTime, wsClients, assimilation. **Operator-only:** 127.0.0.1, `404` through nginx |
 | `GET` | `/api/version` | Build SHA, build time, uptime. **Operator-only:** 127.0.0.1, `404` through nginx |
+| `POST` | `/api/client-errors` | Browser error report `{kind, message, stack?, source?, line?, col?, build?}`; `204`. Same origin only, ≤ 8 KiB |
+| `GET` | `/api/ops/client-errors?limit=N` | Most frequent browser errors with counts. **Operator-only:** 127.0.0.1, `404` through nginx |
 | `GET` | `/api/weather/realtime?lat=&lon=` | Live observation for a point, through the budgeted OpenWeather gateway (cached) |
 | `GET` | `/api/weather/search?q=` | City geocoding (normalised, length-limited query; cached) |
 | `GET` | `/api/weather/locations` | The seed cities shown as chips |
@@ -346,6 +349,8 @@ simulation/
 │       ├── OpenWeatherClient.h/.cc — Budgeted, cached OpenWeather gateway
 │       ├── TtlCache.h           — Small TTL cache for upstream responses
 │       ├── HealthController.h/.cc — liveness/readiness endpoints
+│       ├── ClientErrors.h       — browser error report validation, scrubbing, de-duplication
+│       ├── ClientErrorController.h/.cc — report intake and operator summary
 │       ├── Security.h           — origin / content-type / token checks
 │       ├── RateLimiter.h        — global token buckets for mutating endpoints
 │       ├── SdNotify.h           — systemd READY/WATCHDOG notifications
@@ -363,7 +368,7 @@ simulation/
 │       ├── App.jsx              — state, URL hash, shortcuts, layout switch
 │       ├── components/          — globe layers, desktop HUD, MobileHUD, dialogs
 │       ├── hooks/               — resilient sockets, fullscreen, layout, prefs
-│       └── utils/               — pure, unit-tested helpers (geo, codec, overlay, units)
+│       └── utils/               — pure, unit-tested helpers (geo, codec, overlay, units, error reporter)
 ├── deploy/
 │   ├── logrotate/
 │   │   └── weather-backend
@@ -390,7 +395,8 @@ simulation/
 - **Origin guard**: only Cloudflare can reach the origin; direct requests get `403`
 - **OpenWeather**: one budgeted gateway with caching, query normalisation and response-size limits; constant-time token comparison for `SIM_MUTATION_TOKEN`
 - **TLS**: TLS 1.2 + 1.3 only (1.0/1.1 disabled)
-- **Backend**: Bound to `127.0.0.1:8094` only (not externally reachable); global token buckets on mutations
+- **Backend**: Bound to `127.0.0.1:8094` only (not externally reachable); global token buckets on mutations; operator endpoints also refuse any request that came through a proxy
+- **Error reports**: same-origin JSON only, size-capped, rate-limited per IP and globally; text is stripped of control, bidi and invisible characters before it reaches the log, and each log line is one escaped JSON object. No IP, cookie or page URL is stored
 - **systemd**: `simulation-canary.service` includes `NoNewPrivileges`, `PrivateTmp`, `PrivateDevices`, `ProtectSystem=strict`, `ProtectHome=read-only`, narrow writable log/state paths, `SystemCallFilter=@system-service`, an empty capability set, and `UMask=0077`
 - **Supervision**: `Type=notify` + `WatchdogSec=30` — the backend pings the systemd watchdog from its event loop, so hangs restart automatically, not just crashes
 - **Firewall**: UFW active, default DENY, only 22/80/443 open

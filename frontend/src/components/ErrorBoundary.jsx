@@ -1,4 +1,5 @@
 import { Component } from 'react'
+import { reportError } from '../utils/errorReporter'
 
 // Keeps a crash in one part of the UI (usually WebGL) from blanking the page.
 export default class ErrorBoundary extends Component {
@@ -10,6 +11,7 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.error('UI error', error, info?.componentStack)
+    reportError('render', error, { componentStack: info?.componentStack })
   }
 
   render() {
