@@ -226,7 +226,7 @@ expect_equal "$unknown_status" 404 "unknown paths return a real 404 (no soft-404
 dotfile_status="$(http_code "https://${domain}/.git/config")"
 expect_equal "$dotfile_status" 404 "dotfiles are not served" "/.git/config returned "
 
-for file in robots.txt sitemap.xml manifest.webmanifest; do
+for file in robots.txt sitemap.xml manifest.webmanifest privacy; do
     status="$(http_code "https://${domain}/${file}")"
     expect_equal "$status" 200 "/${file} is served" "/${file} returned "
 done

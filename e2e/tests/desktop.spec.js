@@ -71,6 +71,7 @@ test('keyboard: help dialog opens with ? and closes with Escape', async ({ page 
   await page.keyboard.press('?')
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole('link', { name: 'privacy notice' })).toHaveAttribute('href', '/privacy')
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
 

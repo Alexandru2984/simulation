@@ -24,6 +24,7 @@ A full-stack production application combining a **C++ atmospheric simulation eng
 | **Settings** | °C/°F, m/s · km/h · mph · kn and graphics quality (auto/low/high). The globe honours `prefers-reduced-motion` |
 | **Keyboard** | `1`–`7` layers, `/` search, `e` event panel, `t` storm tour, `r` reset view, `+`/`−` zoom, `f` fullscreen, `s` screenshot, `l` back to live, `?` help, `Esc` closes the topmost layer |
 | **SEO & PWA** | Canonical/Open Graph/Twitter metadata, JSON-LD, sitemap, robots, installable web manifest, real 404s |
+| **Privacy** | No accounts, ads, analytics or tracking cookies; a plain-language notice at [`/privacy`](https://simulation.micutu.com/privacy) |
 | **Error reporting** | Uncaught browser errors, crashed views and undecodable frames are reported anonymously to the backend, de-duplicated and logged with a count |
 
 ---
@@ -376,7 +377,7 @@ simulation/
 │   ├── package.json
 │   ├── vite.config.js           — vendor chunk splitting
 │   ├── index.html               — SEO metadata, JSON-LD, static splash
-│   ├── public/                  — textures (WebP), icons, manifest, robots, sitemap, 404, og-image
+│   ├── public/                  — textures (WebP), icons, manifest, robots, sitemap, 404, privacy notice, og-image
 │   ├── scripts/render-assets.mjs — regenerates icons and the social preview
 │   └── src/
 │       ├── App.jsx              — state, URL hash, shortcuts, layout switch

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#030711" />
+    <title>Privacy — Weather Simulation</title>
+    <meta name="description" content="What the Weather Simulation keeps about visitors: no accounts, no ads, no tracking cookies; short-lived server logs and anonymous error reports." />
+    <link rel="canonical" href="https://simulation.micutu.com/privacy" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: radial-gradient(ellipse at top, #0b1530 0%, #030711 60%) fixed;
+        color: #cbd5e1;
+        font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      main { max-width: 720px; margin: 0 auto; padding: 40px 20px 64px; }
+      .back {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 28px;
+        color: #7dd3fc;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      h1 { margin: 0 0 6px; font-size: clamp(1.7rem, 5vw, 2.2rem); line-height: 1.2; color: #fff; }
+      .updated { margin: 0 0 28px; color: #64748b; font-size: 0.9rem; }
+      h2 { margin: 36px 0 10px; font-size: 1.15rem; color: #f1f5f9; }
+      p, li { color: #cbd5e1; }
+      ul { padding-left: 1.2em; }
+      li + li { margin-top: 6px; }
+      strong { color: #f8fafc; }
+      code {
+        padding: 1px 6px;
+        border-radius: 6px;
+        background: rgba(148, 163, 184, 0.14);
+        color: #e2e8f0;
+        font-size: 0.88em;
+        overflow-wrap: anywhere;
+      }
+      a { color: #7dd3fc; }
+      a:focus-visible { outline: 2px solid #38bdf8; outline-offset: 3px; border-radius: 4px; }
+      .summary {
+        padding: 16px 18px;
+        border: 1px solid rgba(125, 211, 252, 0.25);
+        border-radius: 14px;
+        background: rgba(15, 23, 42, 0.6);
+      }
+      .summary ul { margin: 0; }
+      footer { margin-top: 48px; color: #64748b; font-size: 0.9rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="back" href="/">← Back to the simulation</a>
+      <h1>Privacy</h1>
+      <p class="updated">Last updated 2 November 2026</p>
+
+      <div class="summary">
+        <ul>
+          <li>No accounts, no ads, no analytics and no tracking cookies.</li>
+          <li>Your settings stay in your browser.</li>
+          <li>The server keeps ordinary web logs for up to 14 days, then deletes them.</li>
+          <li>If the page crashes, an anonymous error report is sent so it can be fixed.</li>
+        </ul>
+      </div>
+
+      <h2>What stays in your browser</h2>
+      <p>
+        Your display settings (units, graphics quality, auto-rotate and similar) are saved in
+        your browser's local storage under <code>weather-sim:prefs:v1</code>. They are never
+        sent to the server. Clearing this site's data in your browser removes them.
+      </p>
+      <p>
+        The place and layer you are looking at live in the part of the address after
+        <code>#</code>. Browsers do not send that part to servers; it only travels if you share
+        the link yourself.
+      </p>
+
+      <h2>What the server sees</h2>
+      <ul>
+        <li>
+          <strong>Web server logs.</strong> Like most websites, each request is logged with your
+          IP address, the time, the address requested, your browser's user agent and the
+          referring page. City searches and the coordinates of places you click are part of
+          the requested address. These logs are used to keep the site running and to stop
+          abuse, and are deleted after 14 days.
+        </li>
+        <li>
+          <strong>Rate limiting.</strong> To share the simulation fairly, the server counts
+          recent requests per IP address in memory for a few minutes.
+        </li>
+        <li>
+          <strong>Error reports.</strong> If the page hits an error, it sends the error message,
+          a stack trace (with addresses cut to file names on this site), an identifier of the
+          app version and your browser's user agent. No IP address, cookie, page address or
+          location is stored with a report. Reports are kept in memory until the next server
+          restart, and summarised in service logs for up to 7 days.
+        </li>
+        <li>
+          <strong>Shared events.</strong> When you inject a weather event, its type, place,
+          strength and time are shown to everyone online. Nothing links it to you. Only the
+          latest dozen events are kept, in memory.
+        </li>
+      </ul>
+
+      <h2>Services this site relies on</h2>
+      <ul>
+        <li>
+          <strong>Cloudflare</strong> delivers and protects the site, so all traffic passes
+          through it. Cloudflare processes your IP address and request details for that purpose
+          and may set strictly necessary security cookies (such as <code>__cf_bm</code> or
+          <code>cf_clearance</code>) and run a bot-detection script. See
+          <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener noreferrer">Cloudflare's privacy policy</a>.
+        </li>
+        <li>
+          <strong>OpenWeather</strong> provides live observations and city search. Our server,
+          not your browser, sends it your search text or the coordinates you clicked, rounded to
+          about 1 km, so OpenWeather never sees your IP address. See
+          <a href="https://openweather.co.uk/privacy-policy" rel="noopener noreferrer">OpenWeather's privacy policy</a>.
+        </li>
+      </ul>
+      <p>Nothing is sold, shared for advertising, or used to build a profile of you.</p>
+
+      <h2>Your choices and rights</h2>
+      <p>
+        You can use the simulation without giving any personal information. Because nothing is
+        tied to an account, the server cannot look you up by name. If you want to know what logs
+        hold about your IP address, or want it deleted before the 14 days are up, open an issue
+        at
+        <a href="https://github.com/Alexandru2984/simulation/issues" rel="noopener noreferrer">github.com/Alexandru2984/simulation</a>.
+        Depending on where you live, you may also complain to your data-protection authority.
+      </p>
+
+      <footer>Weather Simulation · simulation.micutu.com</footer>
+    </main>
+  </body>
+</html>

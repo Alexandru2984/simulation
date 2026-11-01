@@ -68,6 +68,22 @@ test('SEO and PWA files are served with the right types', async ({ request }) =>
   expect(await (await request.get('/robots.txt')).text()).toContain('Sitemap: https://simulation.micutu.com/sitemap.xml')
 })
 
+test('the privacy notice is served at a clean address', async ({ request }) => {
+  const res = await request.get('/privacy')
+  expect(res.status()).toBe(200)
+  expect(res.headers()['content-type']).toContain('text/html')
+  expect(res.headers()['content-security-policy']).toContain("default-src 'self'")
+  expect(res.headers()['cache-control']).toContain('max-age=3600')
+  const html = await res.text()
+  expect(html).toContain('<h1>Privacy</h1>')
+  expect(html).not.toContain('<script')
+
+  const legacy = await request.get('/privacy.html', { maxRedirects: 0 })
+  expect(legacy.status()).toBe(301)
+  expect(new URL(legacy.headers().location).pathname).toBe('/privacy')
+  expect(await (await request.get('/sitemap.xml')).text()).toContain('https://simulation.micutu.com/privacy')
+})
+
 test('operator endpoints and dotfiles are not public', async ({ request }) => {
   for (const path of ['/api/metrics', '/api/version', '/api/ops/client-errors']) {
     const res = await request.get(path)

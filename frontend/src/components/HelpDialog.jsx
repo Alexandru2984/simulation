@@ -60,6 +60,9 @@ export default function HelpDialog({ onClose }) {
         service for real-world decisions. Observations by OpenWeatherMap; Earth imagery
         and borders from public-domain datasets.
       </p>
+      <p>
+        No accounts, ads or tracking cookies. Read the <a href="/privacy">privacy notice</a>.
+      </p>
     </Dialog>
   )
 }

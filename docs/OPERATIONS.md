@@ -167,8 +167,10 @@ only as long as nothing includes `sites-available/*`.
 
 What the vhost enforces:
 
-- `/` is the only HTML page (app state lives in the URL hash). Unknown paths
-  get a real `404` with `404.html`, so crawlers never see soft-404s.
+- `/` is the app (its state lives in the URL hash) and `/privacy` the privacy
+  notice (`/privacy.html` redirects there). Unknown paths get a real `404`
+  with `404.html`, so crawlers never see soft-404s. Keep the notice true when
+  logging, retention or third parties change.
 - Caching: `/assets/` (content-hashed) for a year, immutable. Textures, icons,
   favicon and `og-image.jpg` for a week with `stale-while-revalidate`. The
   manifest for a day, `robots.txt` and `sitemap.xml` for an hour. `index.html`
