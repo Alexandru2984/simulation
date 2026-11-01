@@ -2,13 +2,90 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Live Weather Simulation — Interactive 3D Globe of Earth’s Atmosphere</title>
+    <meta name="description" content="Explore a real-time 3D simulation of Earth’s atmosphere: temperature, pressure, wind, humidity, rain and storms on a shared globe. Inject cyclones or heat domes, compare with live observations and run forecasts." />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://simulation.micutu.com/" />
+
+    <meta name="theme-color" content="#030711" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="application-name" content="Weather Simulation" />
+    <meta name="apple-mobile-web-app-title" content="WeatherSim" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
+
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Real-time 3D weather simulation engine" />
-    <title>Weather Simulation — simulation.micutu.com</title>
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- The globe textures are needed as soon as the 3D chunk arrives. -->
+    <link rel="preload" href="/textures/earth.webp" as="image" type="image/webp" crossorigin="anonymous" fetchpriority="low" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Weather Simulation" />
+    <meta property="og:title" content="Live Weather Simulation — Interactive 3D Globe" />
+    <meta property="og:description" content="A real-time 3D model of Earth’s atmosphere that everyone shares — and can change. Temperature, wind, storms and forecasts." />
+    <meta property="og:url" content="https://simulation.micutu.com/" />
+    <meta property="og:image" content="https://simulation.micutu.com/og-image.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="A 3D globe coloured by simulated temperature next to the title Live Weather Simulation" />
+    <meta property="og:locale" content="en_US" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Live Weather Simulation — Interactive 3D Globe" />
+    <meta name="twitter:description" content="A real-time 3D model of Earth’s atmosphere that everyone shares — and can change." />
+    <meta name="twitter:image" content="https://simulation.micutu.com/og-image.jpg" />
+    <meta name="twitter:image:alt" content="A 3D globe coloured by simulated temperature next to the title Live Weather Simulation" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Weather Simulation",
+        "alternateName": "Live Weather Simulation",
+        "url": "https://simulation.micutu.com/",
+        "image": "https://simulation.micutu.com/og-image.jpg",
+        "description": "A real-time 3D simulation of Earth’s atmosphere — temperature, pressure, wind, humidity, rain and storms — shared live by every visitor.",
+        "applicationCategory": "EducationalApplication",
+        "applicationSubCategory": "Weather simulation",
+        "operatingSystem": "Any",
+        "browserRequirements": "Requires JavaScript and WebGL 2",
+        "isAccessibleForFree": true,
+        "inLanguage": "en",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
+        "featureList": [
+          "Live global temperature, pressure, humidity, precipitation, wind and storm layers",
+          "Inject cyclones, heat domes, cold outbreaks, blocking highs and tornadoes",
+          "Compare live observations with the simulation anywhere on Earth",
+          "100-step forecasts and history playback",
+          "Shareable links, screenshots and keyboard shortcuts"
+        ]
+      }
+    </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Shown until the app boots; also the crawlable description. -->
+      <div class="splash" role="status">
+        <div class="splash__inner">
+          <div class="splash__orb" aria-hidden="true"></div>
+          <h1>Weather Simulation</h1>
+          <p>A live 3D model of Earth’s atmosphere — temperature, pressure, wind, humidity, rain and storms — shared in real time by everyone watching.</p>
+          <p class="splash__status">Loading the live 3D globe…</p>
+        </div>
+      </div>
+    </div>
+    <noscript>
+      <div style="position:fixed;inset:0;display:grid;place-items:center;padding:24px;background:#030711;color:#e2e8f0;font-family:system-ui,sans-serif;text-align:center">
+        <p>This interactive weather globe needs JavaScript. Please enable it and reload the page.</p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

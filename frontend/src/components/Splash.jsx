@@ -6,7 +6,8 @@ export default function Splash({ hidden = false, title = 'Weather Simulation', m
       <div className="splash__inner">
         <div className="splash__orb" aria-hidden="true" />
         <h1>{title}</h1>
-        <p>{message ?? 'Loading the live 3D globe…'}</p>
+        <p>A live 3D model of Earth’s atmosphere — temperature, pressure, wind, humidity, rain and storms — shared in real time by everyone watching.</p>
+        <p className="splash__status">{message ?? 'Loading the live 3D globe…'}</p>
         {action}
       </div>
     </div>

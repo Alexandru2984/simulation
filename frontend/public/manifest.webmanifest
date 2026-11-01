@@ -1,0 +1,20 @@
+{
+  "name": "Weather Simulation",
+  "short_name": "WeatherSim",
+  "description": "A live 3D simulation of Earth's atmosphere shared by everyone watching.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#030711",
+  "theme_color": "#030711",
+  "lang": "en",
+  "categories": ["education", "weather"],
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -63,8 +63,8 @@ export default function EarthGlobe({ temperature = 20, simTime = 0, onGlobeClick
   tempRef.current = temperature
 
   const [earthTex, specTex] = useLoader(TextureLoader, [
-    '/textures/earth.jpg',
-    '/textures/earth_specular.jpg',
+    '/textures/earth.webp',
+    '/textures/earth_specular.webp',
   ])
 
   const uniforms = useMemo(() => ({

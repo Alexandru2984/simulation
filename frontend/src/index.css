@@ -697,6 +697,7 @@ a { color: var(--sky); }
 }
 .splash h1 { margin: 0 0 8px; font-size: 1.4rem; color: var(--text-strong); }
 .splash p { margin: 0 0 6px; color: var(--text-muted); font-size: 0.92rem; }
+.splash .splash__status { margin-top: 14px; color: var(--sky); font-weight: 600; font-size: 0.86rem; }
 
 /* ── Mobile sheet ───────────────────────────────────────────────────────── */
 .sheet {
