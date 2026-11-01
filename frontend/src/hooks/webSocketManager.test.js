@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
-  combineSocketStatuses,
   createWebSocketManager,
   reconnectDelay,
 } from './webSocketManager.js'
@@ -33,6 +32,10 @@ function makeHarness() {
       if (this.readyState === 3) return
       this.readyState = 3
       this.onclose?.()
+    }
+    serverClose(code) {
+      this.readyState = 3
+      this.onclose?.({ code })
     }
   }
 
@@ -159,11 +162,53 @@ test('hidden tabs defer stale reconnect until visible', () => {
   h.manager.stop()
 })
 
-test('status combination reports the least healthy stream', () => {
-  assert.equal(combineSocketStatuses('connected', 'connected'), 'connected')
-  assert.equal(combineSocketStatuses('connected', 'connecting'), 'connecting')
-  assert.equal(combineSocketStatuses('connected', 'reconnecting'), 'reconnecting')
-  assert.equal(combineSocketStatuses('connected', 'stale'), 'stale')
-  assert.equal(combineSocketStatuses('connected', 'offline'), 'offline')
+test('a full server is reported and retried slowly', () => {
+  const h = makeHarness()
+  h.manager.start()
+  h.sockets[0].open()
+  h.sockets[0].serverClose(1013)
+  assert.equal(h.statuses.at(-1), 'full')
+
+  h.advance(7_999)
+  assert.equal(h.sockets.length, 1)
+  h.advance(1)
+  assert.equal(h.sockets.length, 2)
+  h.manager.stop()
+})
+
+test('background tabs give the connection back and resume when visible', () => {
+  const h = makeHarness()
+  h.manager.start()
+  h.sockets[0].open()
+  h.sockets[0].message('{}')
+
+  // A short trip to another tab keeps the connection.
+  h.setVisible(false)
+  h.emitDocument('visibilitychange')
+  for (let t = 0; t < 30; t++) { h.advance(1_000); h.sockets[0].message('{}') }
+  h.setVisible(true)
+  h.emitDocument('visibilitychange')
+  assert.equal(h.sockets[0].readyState, 1)
+  assert.equal(h.sockets.length, 1)
+
+  // A long one closes it, and nothing reconnects while hidden.
+  h.setVisible(false)
+  h.emitDocument('visibilitychange')
+  h.advance(60_000)
+  assert.equal(h.sockets[0].readyState, 3)
+  h.advance(120_000)
+  assert.equal(h.sockets.length, 1)
+
+  // Coming back reconnects immediately.
+  h.setVisible(true)
+  h.emitDocument('visibilitychange')
+  assert.equal(h.sockets.length, 2)
+  assert.equal(h.statuses.at(-1), 'connecting')
+  h.sockets[1].open()
+  assert.equal(h.statuses.at(-1), 'connected')
+  h.manager.stop()
+})
+
+test('reconnect delay is capped at 30 seconds', () => {
   assert.equal(reconnectDelay(99, () => 1), 30_000)
 })

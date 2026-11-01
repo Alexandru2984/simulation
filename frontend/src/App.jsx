@@ -1,7 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
-import { useWeatherSocket } from './hooks/useWeatherSocket'
 import { useGridSocket } from './hooks/useGridSocket'
-import { combineSocketStatuses } from './hooks/webSocketManager'
 import { useLayout, useReducedMotion } from './hooks/useMediaQuery'
 import { usePreferences } from './hooks/usePreferences'
 import { useToasts } from './hooks/useToasts'
@@ -55,9 +53,9 @@ function GlobeFallback({ title, message, action }) {
 }
 
 export default function App() {
-  const { data: weatherData, status: weatherStatus } = useWeatherSocket()
-  const { data: gridData, status: gridStatus } = useGridSocket()
-  const status = combineSocketStatuses(weatherStatus, gridStatus)
+  // One socket per viewer: the HUD point readout rides in the grid frame.
+  const { data: gridData, status } = useGridSocket()
+  const weatherData = gridData?.point ?? null
   const layout = useLayout()
   const isMobile = layout === 'mobile'
   const reducedMotion = useReducedMotion()
@@ -285,9 +283,11 @@ export default function App() {
   const placing = placementMode ? EVENT_BY_ID[placementMode] : null
   const connectionNotice = status === 'offline'
     ? 'You are offline — reconnecting when the network returns'
-    : status === 'reconnecting' || status === 'stale'
-      ? 'Connection interrupted — reconnecting…'
-      : null
+    : status === 'full'
+      ? 'The simulation is full right now — you will join automatically as soon as a spot frees up'
+      : status === 'reconnecting' || status === 'stale'
+        ? 'Connection interrupted — reconnecting…'
+        : null
 
   const sharedHud = {
     gridData, status, prefs,

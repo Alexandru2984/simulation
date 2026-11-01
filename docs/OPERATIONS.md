@@ -231,6 +231,45 @@ journalctl -u simulation-canary.service --since '-10 minutes' --no-pager
 Use `scripts/security-audit.sh` for method, header, direct-origin and mutation
 validation. Its default probes do not alter shared simulation state.
 
+## Capacity
+
+Measured on this VPS on 2026-11-01. The test backend had production limits
+(`LimitNOFILE=4096`, 4 I/O threads) and was driven by
+`scripts/load/ws-load.mjs` for 20 s per step:
+
+| Viewers | Format | Frames delivered | Egress | Backend CPU | RSS |
+|---|---|---|---|---|---|
+| 1000 | GSB1 | 100 % | 37 MB/s | 0.12 cores | 35 MB |
+| 2000 | GSB1 | 100 % | 73 MB/s | 0.21 cores | 46 MB |
+| 1000 | **GSB2** | 100 % | **7.9 MB/s** | 0.07 cores | 34 MB |
+| 2000 | **GSB2** | 100 % | 17 MB/s | 0.14 cores | 57 MB |
+| 3500 | **GSB2** | 100 % | 28 MB/s | 0.23 cores | 81 MB |
+
+The backend is not the bottleneck. In order, the real limits are:
+
+1. **Egress bandwidth:** ~8 KB/s per viewer, about 64 Mbit/s at the default
+   cap of 1000.
+2. **nginx `worker_connections`:** currently 768 × 10 workers, shared by every
+   vhost. Each viewer holds 2 connections there (client + upstream). Raising
+   it to 4096 in `/etc/nginx/nginx.conf` is a host-wide change; schedule it
+   with the other sites in mind.
+3. **`SIM_WS_MAX_CLIENTS`:** default 1000, with `LimitNOFILE` above it.
+
+Clients that stop reading are closed within `SIM_WS_IDLE_SECONDS` (30 s). A
+test with 300 such clients saw every one evicted and RSS stay flat. The
+legacy formats get a tenth of the slots, because a deliberately slow client
+on JSON would buffer 10× more per second than on GSB2.
+
+Re-run the measurement against a **test** backend, never production:
+
+```bash
+SIM_WS_MAX_CLIENTS=5000 SIM_ALLOWED_ORIGIN=http://127.0.0.1:18443 PORT_BACKEND=18094 \
+  OPENWEATHER_API_KEY=x OPENWEATHER_BASE_URL=http://127.0.0.1:18095 \
+  prlimit --nofile=4096:4096 .tmp/backend-build/weather_backend &
+node scripts/load/ws-load.mjs --url 'ws://127.0.0.1:18094/ws/grid?format=bin2' \
+  --origin http://127.0.0.1:18443 --clients 1000 --ramp 250 --duration 20 --pid $!
+```
+
 ## Monitoring and Alerting
 
 The backend uses `Type=notify` and `WatchdogSec=30`. It announces readiness and

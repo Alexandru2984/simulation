@@ -864,6 +864,7 @@ std::shared_ptr<GridFrame> GridSim::buildFrame(const std::array<Cell, SIZE>& g,
         }
         arrays += ']';
     }
+    frame->compressed = GridCodec::compressPacked(frame->packed, GridCodec::FIELD_COUNT, ROWS, COLS);
     return frame;
 }
 

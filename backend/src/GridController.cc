@@ -2,6 +2,7 @@
 #include "AssimilationStatus.h"
 #include "EventLog.h"
 #include "GridSim.h"
+#include "WeatherSim.h"
 #include "RuntimeInfo.h"
 #include "Security.h"
 #include "WsHub.h"
@@ -11,7 +12,7 @@
 namespace {
 
 WsHub& gridHub() {
-    static WsHub hub(256);
+    static WsHub hub(WsHub::maxClients(), WsHub::maxLegacyClients());
     return hub;
 }
 
@@ -20,12 +21,29 @@ long long unixNow() {
         std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
+std::string pointJson() {
+    const WeatherState s = WeatherSim::instance().current();
+    std::string out = "{\"temperature\":";
+    GridCodec::appendNumber(out, s.temperature, 2);
+    out += ",\"pressure\":";
+    GridCodec::appendNumber(out, s.pressure, 2);
+    out += ",\"wind_speed\":";
+    GridCodec::appendNumber(out, s.wind_speed, 2);
+    out += ",\"wind_direction\":";
+    GridCodec::appendNumber(out, s.wind_direction, 2);
+    out += ",\"timestamp\":";
+    out += std::to_string(s.timestamp);
+    out += '}';
+    return out;
+}
+
 FrameExtras currentExtras() {
     FrameExtras extras;
     extras.speed      = GridSim::instance().speed();
     extras.viewers    = gridHub().size();
     extras.serverTime = unixNow();
     extras.events     = EventLog::instance().json(extras.serverTime);
+    extras.point      = pointJson();
     return extras;
 }
 
@@ -122,18 +140,26 @@ void GridWsController::handleNewConnection(
     }
 
     // Opt-in compact frames; older clients keep receiving JSON text.
-    const bool binary = req->getParameter("format") == "bin1";
-    if (!gridHub().add(conn, binary)) {
-        conn->shutdown(drogon::CloseCode::kViolation, "connection limit reached");
+    const auto& requested = req->getParameter("format");
+    const auto format = requested == "bin2" ? WsHub::Bin2
+                      : requested == "bin1" ? WsHub::Bin1 : WsHub::Json;
+    if (!gridHub().add(conn, format)) {
+        conn->shutdown(WsHub::kTryAgainLater, "simulation is full");
         return;
     }
 
     const auto frame = GridSim::instance().frame();
     const auto extras = currentExtras();
-    if (binary)
+    switch (format) {
+    case WsHub::Bin2:
+        conn->send(GridCodec::composeCompressed(*frame, extras), drogon::WebSocketMessageType::Binary);
+        break;
+    case WsHub::Bin1:
         conn->send(GridCodec::composeBinary(*frame, extras), drogon::WebSocketMessageType::Binary);
-    else
+        break;
+    default:
         conn->send(GridCodec::composeJson(*frame, extras));
+    }
 }
 
 void GridWsController::handleConnectionClosed(
@@ -153,20 +179,26 @@ void GridWsController::handleNewMessage(
 }
 
 void GridWsController::broadcastGrid() {
-    std::vector<drogon::WebSocketConnectionPtr> text, binary;
-    gridHub().collect(text, binary);
-    if (text.empty() && binary.empty()) return;
+    const auto groups = gridHub().collect();
+    const auto& json = groups[WsHub::Json];
+    const auto& bin1 = groups[WsHub::Bin1];
+    const auto& bin2 = groups[WsHub::Bin2];
+    if (json.empty() && bin1.empty() && bin2.empty()) return;
 
+    // Each format is serialized once and shared by all of its clients.
     const auto frame = GridSim::instance().frame();
     const auto extras = currentExtras();
-    if (!text.empty()) {
-        const std::string json = GridCodec::composeJson(*frame, extras);
-        for (const auto& conn : text) conn->send(json);
+    if (!json.empty()) {
+        const std::string msg = GridCodec::composeJson(*frame, extras);
+        for (const auto& conn : json) conn->send(msg);
     }
-    if (!binary.empty()) {
-        const std::string bin = GridCodec::composeBinary(*frame, extras);
-        for (const auto& conn : binary)
-            conn->send(bin, drogon::WebSocketMessageType::Binary);
+    if (!bin1.empty()) {
+        const std::string msg = GridCodec::composeBinary(*frame, extras);
+        for (const auto& conn : bin1) conn->send(msg, drogon::WebSocketMessageType::Binary);
+    }
+    if (!bin2.empty()) {
+        const std::string msg = GridCodec::composeCompressed(*frame, extras);
+        for (const auto& conn : bin2) conn->send(msg, drogon::WebSocketMessageType::Binary);
     }
 }
 

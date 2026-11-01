@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { decodeGridFrame, decodeGridMessage } from './gridCodec.js'
+import { deflateSync } from 'node:zlib'
+import { decodeCompressedGridFrame, decodeGridFrame, decodeGridMessage } from './gridCodec.js'
 
 function encode(header, fieldValues) {
   const headerBytes = new TextEncoder().encode(JSON.stringify(header))
@@ -52,4 +53,74 @@ test('text frames still decode as JSON objects', () => {
   assert.equal(decodeGridMessage('[1,2]'), null)
   assert.equal(decodeGridMessage('{oops'), null)
   assert.equal(decodeGridMessage(42), null)
+})
+
+// Mirrors GridCodec::compressPacked in the backend: per-row deltas (int16
+// wrap), byte shuffle, zlib.
+function encodeCompressed(header, fieldValues, { mangle } = {}) {
+  const { rows, cols } = header
+  const n = fieldValues.length * rows * cols
+  const shuffled = new Uint8Array(n * 2)
+  let i = 0
+  for (const values of fieldValues) {
+    for (let r = 0; r < rows; r++) {
+      let prev = 0
+      for (let c = 0; c < cols; c++, i++) {
+        const value = values[r * cols + c] & 0xffff
+        const delta = (value - prev) & 0xffff
+        prev = value
+        shuffled[i] = delta & 0xff
+        shuffled[n + i] = delta >> 8
+      }
+    }
+  }
+  let payload = deflateSync(mangle?.raw ?? shuffled)
+  if (mangle?.truncate) payload = payload.subarray(0, payload.length >> 1)
+  const headerBytes = new TextEncoder().encode(JSON.stringify({ encoding: 'row-delta+byte-shuffle+zlib', ...header }))
+  const offset = (8 + headerBytes.length + 3) & ~3
+  const buffer = new ArrayBuffer(offset + payload.length)
+  const bytes = new Uint8Array(buffer)
+  bytes.set([0x47, 0x53, 0x42, 0x32])
+  new DataView(buffer).setUint32(4, headerBytes.length, true)
+  bytes.set(headerBytes, 8)
+  bytes.set(payload, offset)
+  return buffer
+}
+
+test('compressed frames decode to exactly the encoded values', async () => {
+  const header = { tick: 3, rows: 2, cols: 3, viewers: 2, fields: [['T', 10, 0], ['P', 10, 1000]] }
+  // Extremes side by side exercise the int16 wrap in the deltas.
+  const T = [-32767, 32767, -32767, 125, -3, 0]
+  const P = [132, 131, 129, 32767, -32767, 1]
+  const frame = await decodeCompressedGridFrame(encodeCompressed(header, [T, P]))
+  assert.equal(frame.tick, 3)
+  assert.equal(frame.viewers, 2)
+  assert.equal(frame.encoding, undefined)
+  assert.deepEqual([...frame.T], T.map(q => Math.fround(q / 10)))
+  assert.deepEqual([...frame.P], P.map(q => Math.fround(q / 10 + 1000)))
+})
+
+test('decodeGridMessage routes GSB2 frames through the async decoder', async () => {
+  const buffer = encodeCompressed({ rows: 1, cols: 2, fields: [['H', 1000, 0]] }, [[500, 750]])
+  const result = decodeGridMessage(buffer)
+  assert.ok(result instanceof Promise)
+  const frame = await result
+  assert.ok(Math.abs(frame.H[1] - 0.75) < 1e-6)
+})
+
+test('hostile compressed frames are rejected', async () => {
+  const header = { rows: 2, cols: 2, fields: [['T', 10, 0]] }
+  const values = [[1, 2, 3, 4]]
+  assert.equal(await decodeCompressedGridFrame(encodeCompressed(header, values, { mangle: { truncate: true } })), null)
+  // A "zip bomb": far more data than the header's grid can hold.
+  assert.equal(await decodeCompressedGridFrame(encodeCompressed(header, values, { mangle: { raw: new Uint8Array(1 << 20) } })), null)
+  // Too little data for the grid.
+  assert.equal(await decodeCompressedGridFrame(encodeCompressed(header, values, { mangle: { raw: new Uint8Array(4) } })), null)
+  // Unknown encoding, wrong magic, hostile field names.
+  const unknown = new Uint8Array(encodeCompressed(header, values))
+  assert.equal(await decodeCompressedGridFrame(encode(header, values)), null)
+  unknown[3] = 0x33
+  assert.equal(await decodeCompressedGridFrame(unknown.buffer), null)
+  assert.equal(await decodeCompressedGridFrame(encodeCompressed({ ...header, fields: [['constructor', 1, 0]] }, values)), null)
+  assert.equal(await decodeCompressedGridFrame(encodeCompressed({ ...header, encoding: 'brotli' }, values)), null)
 })

@@ -25,7 +25,8 @@ public:
                     std::function<void(const drogon::HttpResponsePtr&)>&&) const;
 };
 
-// WebSocket: /ws/grid  — broadcasts full grid JSON every second
+// WebSocket: /ws/grid — the full grid every second, as JSON or, with
+// ?format=bin1 / ?format=bin2, as GSB1 / compressed GSB2 frames (GridCodec.h)
 class GridWsController : public drogon::WebSocketController<GridWsController> {
 public:
     WS_PATH_LIST_BEGIN

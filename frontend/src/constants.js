@@ -27,6 +27,7 @@ export const STATUS_COLORS = {
   connecting: '#60a5fa',
   reconnecting: '#f59e0b',
   stale: '#fb923c',
+  full: '#a855f7',
   offline: '#ef4444',
 }
 
@@ -35,6 +36,7 @@ export const STATUS_LABELS = {
   connecting: 'Connecting',
   reconnecting: 'Reconnecting',
   stale: 'Stalled',
+  full: 'Full',
   offline: 'Offline',
 }
 

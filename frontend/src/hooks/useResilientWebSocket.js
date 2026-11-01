@@ -8,13 +8,17 @@ function websocketUrl(path) {
 
 const parseJson = raw => JSON.parse(raw)
 
-// `decode` turns one frame into state, or returns null to ignore it.
+// `decode` turns one frame into state (or a Promise of it), or returns null
+// to ignore it. Async results are applied strictly in arrival order.
 export function useResilientWebSocket(path, { decode = parseJson, binary = false } = {}) {
   const [data, setData] = useState(null)
   const [status, setStatus] = useState('connecting')
 
   useEffect(() => {
     setData(null)
+    let active = true
+    let pending = Promise.resolve()
+    const apply = value => { if (active && value) setData(value) }
     const manager = createWebSocketManager({
       url: websocketUrl(path),
       onStatus: setStatus,
@@ -24,17 +28,26 @@ export function useResilientWebSocket(path, { decode = parseJson, binary = false
         return socket
       },
       onMessage: raw => {
+        // Ignore malformed application frames; the stale watchdog still
+        // verifies whether the transport remains alive.
+        let value
         try {
-          const value = decode(raw)
-          if (value) setData(value)
+          value = decode(raw)
         } catch {
-          // Ignore malformed application frames; the stale watchdog still
-          // verifies whether the transport remains alive.
+          return
+        }
+        if (value && typeof value.then === 'function') {
+          pending = pending.then(() => value).then(apply, () => {})
+        } else {
+          pending = pending.then(() => apply(value))
         }
       },
     })
     manager.start()
-    return () => manager.stop()
+    return () => {
+      active = false
+      manager.stop()
+    }
   }, [path, decode, binary])
 
   return { data, status }

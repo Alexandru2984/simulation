@@ -534,7 +534,7 @@ TEST(binary_frame_layout_roundtrips) {
     require(header.front() == '{' && header.back() == '}', "header must be a JSON object");
     require(header.find("\"viewers\":7") != std::string::npos, "header carries viewers");
     require(header.find("\"speed\":2.5") != std::string::npos, "header carries speed");
-    require(header.find("[\"P\",100,1000]") != std::string::npos, "header describes fields");
+    require(header.find("[\"P\",10,1000]") != std::string::npos, "header describes fields");
     require(header.find("\"T\":[") == std::string::npos, "header must not repeat arrays");
 
     std::size_t offset = 8 + headerLen;
@@ -547,9 +547,70 @@ TEST(binary_frame_layout_roundtrips) {
     const auto lo = static_cast<unsigned char>(bin[offset + pIndex * 2]);
     const auto hi = static_cast<unsigned char>(bin[offset + pIndex * 2 + 1]);
     const auto q = static_cast<std::int16_t>(static_cast<std::uint16_t>(lo | (hi << 8)));
-    const float decoded = q / 100.0f + 1000.0f;
+    const float decoded = q / 10.0f + 1000.0f;
     const float actual = GridSim::instance().getGrid()[0].P;
-    require(std::fabs(decoded - actual) <= 0.006f, "quantized pressure must decode within 0.01");
+    require(std::fabs(decoded - actual) <= 0.051f, "quantized pressure must decode within 0.05 hPa");
+}
+
+static std::uint32_t readU32(const std::string& bin, std::size_t at) {
+    std::uint32_t v = 0;
+    for (int i = 0; i < 4; i++)
+        v |= static_cast<std::uint32_t>(static_cast<unsigned char>(bin[at + i])) << (8 * i);
+    return v;
+}
+
+TEST(compressed_payload_roundtrips_exactly_including_extremes) {
+    const int fields = 2, rows = 3, cols = 5;
+    std::vector<std::int16_t> packed = {
+        // Extremes next to each other exercise the int16 wrap in the deltas.
+        -32767, 32767, -32767, 0, 1,     32767, 32767, -1, -2, -3,    0, 0, 0, 0, 0,
+        123, -456, 789, -1011, 1213,     7, 7, 7, 7, 8,               -32767, -32767, 32767, 1, -1,
+    };
+    const std::string z = GridCodec::compressPacked(packed, fields, rows, cols);
+    require(GridCodec::decompressPacked(z, fields, rows, cols) == packed, "GSB2 payload must round-trip bit-exactly");
+
+    bool threw = false;
+    try { GridCodec::decompressPacked(z.substr(0, z.size() / 2), fields, rows, cols); }
+    catch (const std::runtime_error&) { threw = true; }
+    require(threw, "a truncated payload must be rejected");
+
+    threw = false;
+    try { GridCodec::decompressPacked(z, fields, rows, cols + 1); }
+    catch (const std::runtime_error&) { threw = true; }
+    require(threw, "a payload for another grid size must be rejected");
+}
+
+TEST(compressed_frame_matches_binary_frame_and_is_small) {
+    GridSim::instance().resetForTesting();
+    GridSim::instance().runTestSteps(200);
+    const auto frame = GridSim::instance().frame();
+    FrameExtras extras;
+    extras.viewers = 4;
+    const std::string bin1 = GridCodec::composeBinary(*frame, extras);
+    const std::string bin2 = GridCodec::composeCompressed(*frame, extras);
+
+    require(bin2.compare(0, 4, "GSB2") == 0, "compressed frame must start with GSB2");
+    const std::uint32_t headerLen = readU32(bin2, 4);
+    const std::string header = bin2.substr(8, headerLen);
+    require(header.find("\"encoding\":\"row-delta+byte-shuffle+zlib\"") != std::string::npos,
+            "header names the encoding");
+    require(header.find("\"viewers\":4") != std::string::npos, "header carries extras");
+
+    const std::size_t offset = (8 + headerLen + 3) & ~std::size_t(3);
+    const auto packed = GridCodec::decompressPacked(bin2.substr(offset), GridCodec::FIELD_COUNT,
+                                                    GridSim::ROWS, GridSim::COLS);
+    require(packed == frame->packed, "GSB2 carries exactly the GSB1 values");
+    require(bin2.size() * 3 < bin1.size(), "GSB2 must be at least 3x smaller than GSB1");
+}
+
+TEST(quantization_stays_below_display_precision) {
+    for (const float t : {-62.37f, -0.04f, 0.0f, 14.66f, 57.91f}) {
+        const auto q = GridCodec::quantize(t, GridCodec::FIELDS[0]);
+        require(std::fabs(q / GridCodec::FIELDS[0].scale + GridCodec::FIELDS[0].offset - t) <= 0.05f,
+                "temperature must survive quantization within 0.05 °C");
+    }
+    const auto h = GridCodec::quantize(0.4567f, GridCodec::FIELDS[4]);
+    require(std::fabs(h / GridCodec::FIELDS[4].scale - 0.4567f) <= 0.0005f, "humidity within 0.05 %");
 }
 
 TEST(json_state_includes_speed_and_events) {
@@ -562,6 +623,10 @@ TEST(json_state_includes_speed_and_events) {
     require(json.find("\"speed\":") != std::string::npos, "JSON carries speed");
     require(json.find("\"events\":[{\"id\":1}]") != std::string::npos, "JSON carries events");
     require(json.find("\"SP\":[") != std::string::npos, "JSON keeps SP array");
+    require(json.find("\"point\":null") != std::string::npos, "JSON carries the point readout");
+    extras.point = "{\"temperature\":21.5}";
+    const std::string bin = GridCodec::composeCompressed(*frame, extras);
+    require(bin.find("\"point\":{\"temperature\":21.5}") != std::string::npos, "binary header carries the point readout");
     require(json.front() == '{' && json.back() == '}', "JSON must be one object");
 }
 
@@ -709,6 +774,9 @@ int main() {
     RUN(inject_respects_physical_bounds);
     RUN(json_numbers_are_compact);
     RUN(binary_frame_layout_roundtrips);
+    RUN(compressed_payload_roundtrips_exactly_including_extremes);
+    RUN(compressed_frame_matches_binary_frame_and_is_small);
+    RUN(quantization_stays_below_display_precision);
     RUN(json_state_includes_speed_and_events);
     RUN(event_log_is_bounded_and_ages_out);
 

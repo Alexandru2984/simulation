@@ -170,17 +170,41 @@ Frontal boundaries are detected via temperature gradient anomalies above thresho
 
 ### WebSocket Streams
 
-| Path | Payload | Frequency |
+| Path | Payload | Per viewer |
 |---|---|---|
-| `/ws/weather` | `{temperature, pressure, wind_speed, wind_direction}` | 1 Hz |
-| `/ws/grid` | Full grid state JSON (all 2592 cells, ~100 KB) | 1 Hz |
-| `/ws/grid?format=bin1` | The same frame as binary `GSB1` (~38 KB); used by the frontend | 1 Hz |
+| `/ws/grid?format=bin2` | Compressed binary `GSB2` frame. **Used by the frontend**, one socket per viewer | ~8 KB/s |
+| `/ws/grid?format=bin1` | Uncompressed binary `GSB1` (fallback without `DecompressionStream`) | ~37 KB/s |
+| `/ws/grid` | JSON | ~80 KB/s |
+| `/ws/weather` | Point readout only (legacy; now inside grid frames as `point`) | 0.1 KB/s |
 
-Grid frames (JSON and binary) also carry `speed`, `viewers` (open grid
-sockets), `serverTime` (unix seconds) and `events` (recent injections:
-id, type, lat, lon, intensity, time). The expensive part of a frame is built
-once per grid version and shared by every client. Idle sockets are dropped
-after `SIM_WS_IDLE_SECONDS` (default 75 s) without answering a ping.
+Every grid frame is sent at 1 Hz and carries:
+
+- `speed`;
+- `viewers` (open grid sockets);
+- `serverTime` (unix seconds);
+- `events` (recent injections: id, type, lat, lon, intensity, time);
+- `point` (the HUD readout: temperature, pressure, wind_speed, wind_direction,
+  timestamp).
+
+The expensive part of a frame, including the compressed payload, is built
+once per grid version and shared by every client. Each format is serialized
+once per broadcast.
+
+Limits:
+
+- Viewers are capped at `SIM_WS_MAX_CLIENTS` (default 1000).
+- JSON/`GSB1` and `/ws/weather` together get a tenth of that (at least 16).
+  Only stale tabs use them, at 5–10× the cost.
+- A full server closes the handshake with code **1013 (Try Again Later)**.
+  The frontend shows "the simulation is full" and retries with backoff.
+- Sockets that do not answer a ping within `SIM_WS_IDLE_SECONDS` (default
+  30 s) are closed. This also bounds what can pile up for a client that stops
+  reading.
+- Tabs hidden for more than a minute close their socket and reconnect when
+  shown.
+
+Precision is 0.1 °C / hPa / m/s, 0.1 % humidity and 0.01 mm/h rain. That is
+finer than anything displayed, and coarser digits compress far better.
 
 `GSB1` layout, little-endian (see `backend/src/GridCodec.h` and
 `frontend/src/utils/gridCodec.js`):
@@ -193,6 +217,17 @@ after `SIM_WS_IDLE_SECONDS` (default 75 s) without answering a ping.
     zero padding to a 4-byte boundary
     int16[fields × rows × cols], field-major; value = q / scale + offset
 ```
+
+`GSB2` has the same framing with magic `"GSB2"` and
+`"encoding": "row-delta+byte-shuffle+zlib"` in the header. Its int16 block
+is replaced by a zlib (RFC 1950) stream of that block after two lossless
+transforms:
+
+1. per-row deltas within each field (int16 wrap-around);
+2. a byte shuffle (all low bytes, then all high bytes).
+
+Browsers inflate it with the native `DecompressionStream`. The decoder
+refuses output larger than the grid.
 
 ### Errors
 
@@ -281,7 +316,8 @@ SIM_MUTATION_TOKEN=change-me
 # Optional overrides
 SIM_STATE_FILE=/srv/.../state/grid.snapshot      # persisted world
 SIM_HISTORY_FILE=/srv/.../state/history.snapshot # persisted history ring
-SIM_WS_IDLE_SECONDS=75                           # 3–3600, idle socket eviction
+SIM_WS_MAX_CLIENTS=1000                          # 1–20000 viewers; keep LimitNOFILE above it
+SIM_WS_IDLE_SECONDS=30                           # 3–3600, unresponsive socket eviction
 OPENWEATHER_BASE_URL=https://api.openweathermap.org  # for tests/staging only
 ```
 
@@ -303,7 +339,7 @@ simulation/
 │   └── src/
 │       ├── main.cc              — Drogon app bootstrap, OWM assimilation scheduler
 │       ├── GridSim.h / .cc      — Physics engine (36×72 grid, 10 Hz loop) + state snapshots
-│       ├── GridCodec.h          — Cached JSON/GSB1 frame encoding
+│       ├── GridCodec.h / .cc    — Cached JSON/GSB1/GSB2 frame encoding
 │       ├── GridController.h/.cc — REST + WebSocket handlers for grid
 │       ├── EventLog.h           — Recent injections for the live feed
 │       ├── WsHub.h              — Socket registry with idle eviction

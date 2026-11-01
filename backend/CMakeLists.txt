@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options(-Wall -Wextra)
 
 find_package(Drogon REQUIRED)
+find_package(ZLIB REQUIRED)
 find_package(Git QUIET)
 
 set(SIM_BUILD_GIT_SHA "unknown")
@@ -40,6 +41,7 @@ add_executable(weather_backend
     src/SeedController.cc
     src/HealthController.cc
     src/GridSim.cc
+    src/GridCodec.cc
     src/GridController.cc
     src/WeatherProxy.cc
     src/OpenWeatherClient.cc
@@ -50,9 +52,10 @@ enable_testing()
 
 add_executable(test_gridsim
     src/GridSim.cc
+    src/GridCodec.cc
     tests/test_gridsim.cc
 )
-target_link_libraries(test_gridsim PRIVATE Drogon::Drogon)
+target_link_libraries(test_gridsim PRIVATE Drogon::Drogon ZLIB::ZLIB)
 target_include_directories(test_gridsim PRIVATE src)
 target_compile_definitions(test_gridsim PRIVATE GRID_SIM_TESTING)
 
@@ -74,7 +77,7 @@ add_test(NAME gridsim    COMMAND test_gridsim)
 add_test(NAME security   COMMAND test_security)
 add_test(NAME weathersim COMMAND test_weathersim)
 
-target_link_libraries(weather_backend PRIVATE Drogon::Drogon)
+target_link_libraries(weather_backend PRIVATE Drogon::Drogon ZLIB::ZLIB)
 target_include_directories(weather_backend PRIVATE src)
 target_compile_definitions(weather_backend PRIVATE
     SIM_BUILD_GIT_SHA="${SIM_BUILD_GIT_SHA}"

@@ -36,8 +36,10 @@ void WeatherRestController::getWeather(
 
 // ── WebSocket ────────────────────────────────────────────────────────────────
 
+// Superseded by the "point" readout in grid frames; kept for tabs still
+// running an older frontend, so it only gets the legacy share of slots.
 static WsHub& weatherHub() {
-    static WsHub hub(256);
+    static WsHub hub(WsHub::maxLegacyClients());
     return hub;
 }
 
@@ -56,8 +58,8 @@ void WeatherWsController::handleNewConnection(
         conn->shutdown(drogon::CloseCode::kViolation, "forbidden origin");
         return;
     }
-    if (!weatherHub().add(conn, false)) {
-        conn->shutdown(drogon::CloseCode::kViolation, "connection limit reached");
+    if (!weatherHub().add(conn)) {
+        conn->shutdown(WsHub::kTryAgainLater, "simulation is full");
         return;
     }
     conn->send(stateMessage());
@@ -81,8 +83,7 @@ void WeatherWsController::handleConnectionClosed(
 
 // ── Broadcast task (registered as a recurring timer in main.cc) ──────────────
 void broadcastWeather() {
-    std::vector<drogon::WebSocketConnectionPtr> clients, unused;
-    weatherHub().collect(clients, unused);
+    const auto clients = weatherHub().collect()[WsHub::Json];
     if (clients.empty()) return;
 
     const std::string msg = stateMessage();

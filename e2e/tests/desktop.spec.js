@@ -1,18 +1,24 @@
 import { test, expect } from '@playwright/test'
 import { clickGlobeCentre, openApp, watchErrors } from './helpers.js'
 
-test('boots, streams binary grid frames and follows layer shortcuts', async ({ page }) => {
+test('boots on one compressed stream and follows layer shortcuts', async ({ page }) => {
   const errors = watchErrors(page)
+  const sockets = []
   const binaryFrame = new Promise(resolve => {
     page.on('websocket', ws => {
-      if (!ws.url().includes('/ws/grid')) return
-      ws.on('framereceived', frame => { if (typeof frame.payload !== 'string') resolve(frame.payload) })
+      sockets.push(ws.url())
+      ws.on('framereceived', frame => { if (typeof frame.payload !== 'string') resolve(frame) })
     })
   })
 
   await openApp(page)
   const frame = await binaryFrame
-  expect(frame.subarray(0, 4).toString('latin1')).toBe('GSB1')
+  expect(frame.payload.subarray(0, 4).toString('latin1')).toBe('GSB2')
+  expect(frame.payload.length).toBeLessThan(12_000)
+  // One socket per viewer: the HUD readout rides in the grid frames.
+  expect(sockets).toHaveLength(1)
+  expect(sockets[0]).toContain('/ws/grid?format=bin2')
+  await expect(page.locator('.left-rail')).toContainText('hPa')
 
   await page.keyboard.press('3')
   await expect(page.getByRole('radio', { name: 'Pressure' }).first()).toHaveAttribute('aria-pressed', 'true')
