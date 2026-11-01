@@ -39,4 +39,5 @@ public:
     void handleConnectionClosed(const drogon::WebSocketConnectionPtr&) override;
 
     static void broadcastGrid();
+    static std::size_t viewerCount();
 };

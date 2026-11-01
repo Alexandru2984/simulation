@@ -1,9 +1,8 @@
 #include "WeatherController.h"
 #include "Security.h"
+#include "WsHub.h"
 #include <drogon/drogon.h>
 #include <json/json.h>
-#include <mutex>
-#include <set>
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,9 +36,16 @@ void WeatherRestController::getWeather(
 
 // ── WebSocket ────────────────────────────────────────────────────────────────
 
-static std::mutex ws_mtx;
-static std::set<drogon::WebSocketConnectionPtr> ws_clients;
-static constexpr std::size_t MAX_WEATHER_WS_CLIENTS = 256;
+static WsHub& weatherHub() {
+    static WsHub hub(256);
+    return hub;
+}
+
+static std::string stateMessage() {
+    Json::StreamWriterBuilder builder;
+    builder["indentation"] = "";
+    return Json::writeString(builder, stateToJson(WeatherSim::instance().current()));
+}
 
 void WeatherWsController::handleNewConnection(
     const drogon::HttpRequestPtr& req,
@@ -50,55 +56,35 @@ void WeatherWsController::handleNewConnection(
         conn->shutdown(drogon::CloseCode::kViolation, "forbidden origin");
         return;
     }
-    bool accepted = false;
-    {
-        std::lock_guard<std::mutex> lk(ws_mtx);
-        if (ws_clients.size() < MAX_WEATHER_WS_CLIENTS) {
-            ws_clients.insert(conn);
-            accepted = true;
-        }
-    }
-    if (!accepted) {
+    if (!weatherHub().add(conn, false)) {
         conn->shutdown(drogon::CloseCode::kViolation, "connection limit reached");
         return;
     }
-    auto s = WeatherSim::instance().current();
-    Json::FastWriter fw;
-    conn->send(fw.write(stateToJson(s)));
+    conn->send(stateMessage());
 }
 
 void WeatherWsController::handleNewMessage(
-    const drogon::WebSocketConnectionPtr&,
+    const drogon::WebSocketConnectionPtr& conn,
     std::string&&,
     const drogon::WebSocketMessageType&)
 {
-    // Drogon already answers pings; clients send no application messages.
+    // Drogon answers pings itself; any client frame (normally a pong) proves
+    // the client is still reading.
+    WsHub::touch(conn);
 }
 
 void WeatherWsController::handleConnectionClosed(
     const drogon::WebSocketConnectionPtr& conn)
 {
-    std::lock_guard<std::mutex> lk(ws_mtx);
-    ws_clients.erase(conn);
+    weatherHub().remove(conn);
 }
 
-// ── Broadcast task (called from main) ────────────────────────────────────────
-// Registered as a recurring timer in main.cc
-
+// ── Broadcast task (registered as a recurring timer in main.cc) ──────────────
 void broadcastWeather() {
-    std::vector<drogon::WebSocketConnectionPtr> clients;
-    {
-        std::lock_guard<std::mutex> lk(ws_mtx);
-        if (ws_clients.empty()) return;
-        clients.assign(ws_clients.begin(), ws_clients.end());
-    }
+    std::vector<drogon::WebSocketConnectionPtr> clients, unused;
+    weatherHub().collect(clients, unused);
+    if (clients.empty()) return;
 
-    auto s = WeatherSim::instance().current();
-    Json::FastWriter fw;
-    std::string msg = fw.write(stateToJson(s));
-    msg.erase(msg.find_last_not_of("\n") + 1); // trim trailing newline
-    for (auto& c : clients) {
-        if (c->connected())
-            c->send(msg);
-    }
+    const std::string msg = stateMessage();
+    for (const auto& conn : clients) conn->send(msg);
 }

@@ -1,5 +1,8 @@
 // Lightweight unit tests for GridSim
 #include "GridSim.h"
+#include "EventLog.h"
+#include "GridCodec.h"
+#include <cstring>
 #include "test_framework.h"
 #include <cmath>
 #include <cassert>
@@ -463,6 +466,116 @@ TEST(legacy_history_snapshot_is_readable) {
             "legacy history time must be converted without loss");
 }
 
+// ── Frame cache, codec, cadence and event log ────────────────────────────────
+
+TEST(history_cadence_handles_any_speed) {
+    // 0.5x: the tick rests on a multiple of 30 across two iterations.
+    require(GridSim::shouldRecordHistory(29, 30), "crossing into bucket 1 records");
+    require(!GridSim::shouldRecordHistory(30, 30), "resting on 30 must not record twice");
+    // 7x: 28 -> 35 jumps over 30 without ever landing on it.
+    require(GridSim::shouldRecordHistory(28, 35), "jumping over a multiple must record");
+    require(!GridSim::shouldRecordHistory(31, 38), "inside one bucket must not record");
+    // 50x crosses at most one recording per loop iteration.
+    require(GridSim::shouldRecordHistory(100, 150), "large jumps still record");
+}
+
+TEST(frame_is_cached_until_state_changes) {
+    GridSim& sim = GridSim::instance();
+    const auto a = sim.frame();
+    const auto b = sim.frame();
+    require(a.get() == b.get(), "same state version must reuse the cached frame");
+    sim.inject(10.0f, 10.0f, GridSim::EventType::HEAT_DOME, 1.0f);
+    const auto c = sim.frame();
+    require(c.get() != a.get(), "an injection must invalidate the frame");
+    require(c->version > a->version, "frame version must advance");
+    runSteps(1);
+    require(sim.frame()->tick == c->tick + 1, "a physics step must produce a new frame");
+}
+
+TEST(inject_respects_physical_bounds) {
+    GridSim& sim = GridSim::instance();
+    for (int i = 0; i < 6; i++) {
+        sim.inject(-60.0f, 120.0f, GridSim::EventType::COLD_OUTBREAK, 3.0f);
+        sim.inject(-60.0f, 120.0f, GridSim::EventType::CYCLONE, 3.0f);
+    }
+    for (const auto& c : sim.getGrid()) {
+        require(c.T >= -80.0f && c.T <= 60.0f, "injected T must stay within bounds");
+        require(c.P >= 940.0f && c.P <= 1060.0f, "injected P must stay within bounds");
+        require(std::sqrt(c.U * c.U + c.V * c.V) <= 70.01f, "injected wind must be capped");
+    }
+}
+
+TEST(json_numbers_are_compact) {
+    std::string out;
+    GridCodec::appendNumber(out, 12.5, 2);   out += ' ';
+    GridCodec::appendNumber(out, 0.0, 2);    out += ' ';
+    GridCodec::appendNumber(out, -0.001, 2); out += ' ';
+    GridCodec::appendNumber(out, 1013.25, 2); out += ' ';
+    GridCodec::appendNumber(out, -3.10, 2);
+    require(out == "12.5 0 0 1013.25 -3.1", "trailing zeros and negative zero must be trimmed");
+}
+
+TEST(binary_frame_layout_roundtrips) {
+    const auto frame = GridSim::instance().frame();
+    FrameExtras extras;
+    extras.speed = 2.5;
+    extras.viewers = 7;
+    extras.serverTime = 1700000000;
+    const std::string bin = GridCodec::composeBinary(*frame, extras);
+
+    require(bin.compare(0, 4, "GSB1") == 0, "binary frame must start with GSB1");
+    std::uint32_t headerLen = 0;
+    for (int i = 0; i < 4; i++)
+        headerLen |= static_cast<std::uint32_t>(static_cast<unsigned char>(bin[4 + i])) << (8 * i);
+    const std::string header = bin.substr(8, headerLen);
+    require(header.front() == '{' && header.back() == '}', "header must be a JSON object");
+    require(header.find("\"viewers\":7") != std::string::npos, "header carries viewers");
+    require(header.find("\"speed\":2.5") != std::string::npos, "header carries speed");
+    require(header.find("[\"P\",100,1000]") != std::string::npos, "header describes fields");
+    require(header.find("\"T\":[") == std::string::npos, "header must not repeat arrays");
+
+    std::size_t offset = 8 + headerLen;
+    offset = (offset + 3) & ~std::size_t(3);
+    const std::size_t values = static_cast<std::size_t>(GridCodec::FIELD_COUNT) * GridSim::SIZE;
+    require(bin.size() == offset + values * 2, "payload must hold every quantized value");
+
+    // Decode P at cell 0 and compare with the live grid.
+    const std::size_t pIndex = static_cast<std::size_t>(1) * GridSim::SIZE;
+    const auto lo = static_cast<unsigned char>(bin[offset + pIndex * 2]);
+    const auto hi = static_cast<unsigned char>(bin[offset + pIndex * 2 + 1]);
+    const auto q = static_cast<std::int16_t>(static_cast<std::uint16_t>(lo | (hi << 8)));
+    const float decoded = q / 100.0f + 1000.0f;
+    const float actual = GridSim::instance().getGrid()[0].P;
+    require(std::fabs(decoded - actual) <= 0.006f, "quantized pressure must decode within 0.01");
+}
+
+TEST(json_state_includes_speed_and_events) {
+    const auto frame = GridSim::instance().frame();
+    FrameExtras extras;
+    extras.viewers = 3;
+    extras.events = "[{\"id\":1}]";
+    const std::string json = GridCodec::composeJson(*frame, extras);
+    require(json.find("\"viewers\":3") != std::string::npos, "JSON carries viewers");
+    require(json.find("\"speed\":") != std::string::npos, "JSON carries speed");
+    require(json.find("\"events\":[{\"id\":1}]") != std::string::npos, "JSON carries events");
+    require(json.find("\"SP\":[") != std::string::npos, "JSON keeps SP array");
+    require(json.front() == '{' && json.back() == '}', "JSON must be one object");
+}
+
+TEST(event_log_is_bounded_and_ages_out) {
+    auto& log = EventLog::instance();
+    log.clearForTesting();
+    for (int i = 0; i < 20; i++) log.record("cyclone", 40.0f, -74.0f, 1.0f, 1000 + i);
+    const std::string json = log.json(1019);
+    std::size_t count = 0;
+    for (std::size_t p = json.find("\"id\":"); p != std::string::npos; p = json.find("\"id\":", p + 1))
+        count++;
+    require(count == EventLog::CAPACITY, "event log must keep only the newest entries");
+    require(json.find("\"id\":20") < json.find("\"id\":19"), "newest event must come first");
+    require(log.json(1019 + 10000) == "[]", "old events must age out");
+    log.clearForTesting();
+}
+
 int main() {
     printf("\n=== GridSim Unit Tests ===\n\n");
 
@@ -504,6 +617,15 @@ int main() {
     RUN(history_snapshot_rejects_bad_count);
     RUN(legacy_history_snapshot_is_readable);
     RUN(legacy_state_time_advances_past_float_limit);
+
+    // Frame cache, codec, cadence and event log
+    RUN(history_cadence_handles_any_speed);
+    RUN(frame_is_cached_until_state_changes);
+    RUN(inject_respects_physical_bounds);
+    RUN(json_numbers_are_compact);
+    RUN(binary_frame_layout_roundtrips);
+    RUN(json_state_includes_speed_and_events);
+    RUN(event_log_is_bounded_and_ages_out);
 
     printf("\n=== %d passed, %d failed ===\n\n", passed, failed);
     return failed > 0 ? 1 : 0;

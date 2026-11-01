@@ -1,15 +1,39 @@
 #include "GridController.h"
 #include "AssimilationStatus.h"
+#include "EventLog.h"
 #include "GridSim.h"
 #include "RuntimeInfo.h"
 #include "Security.h"
+#include "WsHub.h"
 #include <drogon/drogon.h>
-#include <mutex>
-#include <set>
+#include <chrono>
 
-static std::mutex                                    wsGridMtx;
-static std::set<drogon::WebSocketConnectionPtr>      wsGridClients;
-static constexpr std::size_t                         MAX_GRID_WS_CLIENTS = 256;
+namespace {
+
+WsHub& gridHub() {
+    static WsHub hub(256);
+    return hub;
+}
+
+long long unixNow() {
+    return std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+FrameExtras currentExtras() {
+    FrameExtras extras;
+    extras.speed      = GridSim::instance().speed();
+    extras.viewers    = gridHub().size();
+    extras.serverTime = unixNow();
+    extras.events     = EventLog::instance().json(extras.serverTime);
+    return extras;
+}
+
+}  // namespace
+
+std::size_t GridWsController::viewerCount() {
+    return gridHub().size();
+}
 
 static drogon::HttpResponsePtr jsonResp(const std::string& body,
                                         drogon::HttpStatusCode code = drogon::k200OK) {
@@ -20,7 +44,10 @@ void GridRestController::getState(
     const drogon::HttpRequestPtr&,
     std::function<void(const drogon::HttpResponsePtr&)>&& cb) const
 {
-    cb(jsonResp(GridSim::instance().getStateJson()));
+    auto resp = jsonResp(GridCodec::composeJson(*GridSim::instance().frame(),
+                                                currentExtras()));
+    resp->addHeader("Cache-Control", "no-store");
+    cb(resp);
 }
 
 void GridRestController::inject(
@@ -62,15 +89,25 @@ void GridRestController::inject(
         return;
     }
 
-    GridSim::EventType type;
-    if      (typeStr == "cyclone")       type = GridSim::EventType::CYCLONE;
-    else if (typeStr == "heat_dome")     type = GridSim::EventType::HEAT_DOME;
-    else if (typeStr == "cold_outbreak") type = GridSim::EventType::COLD_OUTBREAK;
-    else if (typeStr == "blocking_high") type = GridSim::EventType::BLOCKING_HIGH;
-    else if (typeStr == "tornado")       type = GridSim::EventType::TORNADO;
-    else { cb(jsonResp("{\"error\":\"unknown type\"}", drogon::k400BadRequest)); return; }
+    // Map to a static identifier so the event log never stores user text.
+    struct Known { const char* id; GridSim::EventType type; };
+    static constexpr Known KNOWN[] = {
+        {"cyclone",       GridSim::EventType::CYCLONE},
+        {"heat_dome",     GridSim::EventType::HEAT_DOME},
+        {"cold_outbreak", GridSim::EventType::COLD_OUTBREAK},
+        {"blocking_high", GridSim::EventType::BLOCKING_HIGH},
+        {"tornado",       GridSim::EventType::TORNADO},
+    };
+    const Known* match = nullptr;
+    for (const auto& known : KNOWN)
+        if (typeStr == known.id) { match = &known; break; }
+    if (!match) {
+        cb(jsonResp("{\"error\":\"unknown type\"}", drogon::k400BadRequest));
+        return;
+    }
 
-    GridSim::instance().inject(lat, lon, type, intensity);
+    GridSim::instance().inject(lat, lon, match->type, intensity);
+    EventLog::instance().record(match->id, lat, lon, intensity, unixNow());
     cb(jsonResp("{\"ok\":true}"));
 }
 
@@ -84,43 +121,53 @@ void GridWsController::handleNewConnection(
         return;
     }
 
-    bool accepted = false;
-    {
-        std::lock_guard<std::mutex> lk(wsGridMtx);
-        if (wsGridClients.size() < MAX_GRID_WS_CLIENTS) {
-            wsGridClients.insert(conn);
-            accepted = true;
-        }
-    }
-    if (!accepted) {
+    // Opt-in compact frames; older clients keep receiving JSON text.
+    const bool binary = req->getParameter("format") == "bin1";
+    if (!gridHub().add(conn, binary)) {
         conn->shutdown(drogon::CloseCode::kViolation, "connection limit reached");
         return;
     }
-    conn->send(GridSim::instance().getStateJson());
+
+    const auto frame = GridSim::instance().frame();
+    const auto extras = currentExtras();
+    if (binary)
+        conn->send(GridCodec::composeBinary(*frame, extras), drogon::WebSocketMessageType::Binary);
+    else
+        conn->send(GridCodec::composeJson(*frame, extras));
 }
 
 void GridWsController::handleConnectionClosed(
     const drogon::WebSocketConnectionPtr& conn)
 {
-    std::lock_guard<std::mutex> lk(wsGridMtx);
-    wsGridClients.erase(conn);
+    gridHub().remove(conn);
 }
 
 void GridWsController::handleNewMessage(
-    const drogon::WebSocketConnectionPtr&,
+    const drogon::WebSocketConnectionPtr& conn,
     std::string&&,
-    const drogon::WebSocketMessageType&) {}
+    const drogon::WebSocketMessageType&)
+{
+    // Clients send no application messages; any frame (normally a pong)
+    // proves the client is still reading.
+    WsHub::touch(conn);
+}
 
 void GridWsController::broadcastGrid() {
-    std::vector<drogon::WebSocketConnectionPtr> clients;
-    {
-        std::lock_guard<std::mutex> lk(wsGridMtx);
-        if (wsGridClients.empty()) return;
-        clients.assign(wsGridClients.begin(), wsGridClients.end());
+    std::vector<drogon::WebSocketConnectionPtr> text, binary;
+    gridHub().collect(text, binary);
+    if (text.empty() && binary.empty()) return;
+
+    const auto frame = GridSim::instance().frame();
+    const auto extras = currentExtras();
+    if (!text.empty()) {
+        const std::string json = GridCodec::composeJson(*frame, extras);
+        for (const auto& conn : text) conn->send(json);
     }
-    std::string json = GridSim::instance().getStateJson();
-    for (auto& conn : clients)
-        conn->send(json);
+    if (!binary.empty()) {
+        const std::string bin = GridCodec::composeBinary(*frame, extras);
+        for (const auto& conn : binary)
+            conn->send(bin, drogon::WebSocketMessageType::Binary);
+    }
 }
 
 void GridRestController::forecast(
@@ -177,8 +224,7 @@ void GridRestController::getMetrics(
     std::function<void(const drogon::HttpResponsePtr&)>&& cb) const
 {
     auto& sim = GridSim::instance();
-    std::size_t clients;
-    { std::lock_guard<std::mutex> lk(wsGridMtx); clients = wsGridClients.size(); }
+    const std::size_t clients = gridHub().size();
 
     const auto& assimilation = AssimilationStatus::instance();
     char buf[1024];

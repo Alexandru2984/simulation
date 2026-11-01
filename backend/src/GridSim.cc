@@ -176,6 +176,7 @@ void GridSim::step(float dt) {
     drainNudges();
     simTime_ += dt;
     tick_++;
+    version_++;
 }
 
 // ── Data assimilation ─────────────────────────────────────────────────────────
@@ -301,15 +302,21 @@ void GridSim::inject(float lat, float lon, EventType type, float intensity) {
                     float sign  = (latCell >= 0.0f) ? 1.0f : -1.0f;
                     cell.U += sign * (-float(dr) / r_dist) * v_max;
                     cell.V += sign * ( float(dc) / r_dist) * v_max;
-                    // Clamp per-cell to physical max
-                    float spd = std::sqrt(cell.U * cell.U + cell.V * cell.V);
-                    if (spd > 70.0f) { cell.U *= 70.0f / spd; cell.V *= 70.0f / spd; }
                 }
                 break;
             }
             }
+
+            // Every event respects the same physical bounds as physicsStep,
+            // so a strong injection cannot publish out-of-range values.
+            cell.T = std::clamp(cell.T, -80.0f, 60.0f);
+            cell.P = std::clamp(cell.P, 940.0f, 1060.0f);
+            cell.H = std::clamp(cell.H, 0.0f, 1.0f);
+            const float spd = std::sqrt(cell.U * cell.U + cell.V * cell.V);
+            if (spd > 70.0f) { cell.U *= 70.0f / spd; cell.V *= 70.0f / spd; }
         }
     }
+    version_++;
 }
 
 // ── Snapshot persistence ──────────────────────────────────────────────────────
@@ -416,6 +423,7 @@ bool GridSim::loadState(const std::string& path) {
     grid_    = g;
     simTime_ = simTime;
     tick_.store(tick);
+    version_++;
     return true;
 }
 
@@ -517,11 +525,16 @@ void GridSim::loop() {
     while (running_.load()) {
         auto t0 = clock::now();
 
+        const long long before = tick_.load();
         int steps = stepsForTick(speed_.load(), stepAccum_);
         for (int i = 0; i < steps; i++) step(DT);
 
-        // Record history snapshot every 30 ticks (~3 real seconds)
-        if (tick_.load() % 30 == 0) recordHistory();
+        // One history snapshot per 30 physics steps (~3 s at 1x). Compare
+        // step buckets instead of testing tick % 30: at fractional speeds the
+        // tick can sit on a multiple of 30 for several loop iterations
+        // (duplicate snapshots), and at speeds that do not divide 30 it can
+        // jump over the multiple entirely (missing snapshots).
+        if (shouldRecordHistory(before, tick_.load())) recordHistory();
 
         auto elapsed = clock::now() - t0;
         auto sleep   = interval - elapsed;
@@ -670,18 +683,16 @@ std::string GridSim::getHistory(int limit) const {
     return os.str();
 }
 
-// ── JSON state output ─────────────────────────────────────────────────────────
-std::string GridSim::getStateJson() const {
-    // Copy under lock, serialize outside — same pattern as getForecast().
-    std::array<Cell, SIZE> g;
-    double simTime;
-    long long tick;
-    {
-        std::lock_guard<std::mutex> lk(mutex_);
-        g       = grid_;
-        simTime = simTime_;
-        tick    = tick_.load();
-    }
+// ── Derived frame (stats, detection, serialized arrays) ───────────────────────
+std::shared_ptr<GridFrame> GridSim::buildFrame(const std::array<Cell, SIZE>& g,
+                                               double simTime, long long tick,
+                                               std::uint64_t version) {
+    auto frame = std::make_shared<GridFrame>();
+    frame->version = version;
+    frame->tick    = tick;
+    frame->simTime = simTime;
+    frame->rows    = ROWS;
+    frame->cols    = COLS;
 
     // ── Zonal means for anomaly-based detection ──
     std::array<float, ROWS> zonalP{}, zonalT{};
@@ -695,9 +706,8 @@ std::string GridSim::getStateJson() const {
         zonalT[r] = sumT / COLS;
     }
 
-    // ── Storm detection ──
+    // ── Storm detection: local pressure minimum with a deep zonal anomaly ──
     std::string storms = "[";
-    bool firstStorm = true;
     for (int r = 1; r < ROWS - 1; r++) {
         for (int c = 0; c < COLS; c++) {
             int i = idx(r, c);
@@ -713,17 +723,17 @@ std::string GridSim::getStateJson() const {
             char buf[200];
             std::snprintf(buf, sizeof(buf),
                 "%s{\"lat\":%.1f,\"lon\":%.1f,\"P\":%.1f,\"anom\":%.1f,\"wind\":%.1f}",
-                firstStorm ? "" : ",",
+                storms.size() > 1 ? "," : "",
                 cellLat(r), cellLon(c), g[i].P, P_anom, windSpd);
             storms += buf;
-            firstStorm = false;
         }
     }
     storms += "]";
+    frame->storms = std::move(storms);
 
     // ── Frontal zone detection ──
-    // Compute row-mean temperature gradient magnitude to normalize against background.
-    // A "frontal zone" is a cell whose gradient exceeds its row mean by 2.5 °C/10°.
+    // A "frontal zone" is a cell whose temperature gradient exceeds its row
+    // mean by 2.5 °C per 10° — normalizing against the background gradient.
     std::array<float, SIZE> gradT{};
     for (int r = 0; r < ROWS; r++) {
         for (int c = 0; c < COLS; c++) {
@@ -742,31 +752,24 @@ std::string GridSim::getStateJson() const {
     }
 
     std::string fronts = "[";
-    bool firstFront = true;
     for (int r = 1; r < ROWS - 1; r++) {
         for (int c = 0; c < COLS; c++) {
             float intensity = gradT[idx(r, c)] - rowMeanGrad[r];
-            if (intensity < 2.5f) continue;    // below-threshold: not a front
+            if (intensity < 2.5f) continue;
             char buf[128];
             std::snprintf(buf, sizeof(buf),
                 "%s{\"lat\":%.1f,\"lon\":%.1f,\"intensity\":%.2f}",
-                firstFront ? "" : ",", cellLat(r), cellLon(c), intensity);
+                fronts.size() > 1 ? "," : "", cellLat(r), cellLon(c), intensity);
             fronts += buf;
-            firstFront = false;
         }
     }
     fronts += "]";
-
-    // ── StormPotential per cell (proxy for convective instability) ──
-    // High SP = warm+moist+low-pressure anomaly at same location
-    // SP = max(0, warmAnomaly) * H * max(0, pressureAnomaly/5)
-    // This favors thunderstorm conditions without claiming CAPE accuracy.
+    frame->fronts = std::move(fronts);
 
     // ── Global area-weighted stats (cos-lat weighting) ──
-    float sumT = 0, sumWind = 0, sumPrecip = 0, totalW = 0;
+    double sumT = 0, sumWind = 0, sumPrecip = 0, totalW = 0;
     for (int r = 0; r < ROWS; r++) {
-        float lat = cellLat(r);
-        float w   = std::cos(lat * (float)M_PI / 180.0f);
+        const double w = std::cos(cellLat(r) * M_PI / 180.0);
         for (int c = 0; c < COLS; c++) {
             int i = idx(r, c);
             sumT      += g[i].T * w;
@@ -775,53 +778,81 @@ std::string GridSim::getStateJson() const {
             totalW    += w;
         }
     }
-    float avgT     = sumT     / totalW;
-    float avgWind  = sumWind  / totalW;
-    float avgPrecip = sumPrecip / totalW;
+    std::string& stats = frame->stats;
+    stats += "\"avgT\":";
+    GridCodec::appendNumber(stats, sumT / totalW, 2);
+    stats += ",\"avgWind\":";
+    GridCodec::appendNumber(stats, sumWind / totalW, 2);
+    stats += ",\"avgPrecip\":";
+    GridCodec::appendNumber(stats, sumPrecip / totalW, 2);
 
-    std::ostringstream os;
-    os << std::fixed << std::setprecision(2);
-
-    auto arr = [&](const char* key, auto getter) {
-        os << "\"" << key << "\":[";
-        for (int i = 0; i < SIZE; i++) {
-            os << getter(g[i]);
-            if (i < SIZE - 1) os << ',';
-        }
-        os << ']';
-    };
-
-    os << '{'
-       << "\"tick\":"     << tick          << ','
-       << "\"cols\":"     << COLS          << ','
-       << "\"rows\":"     << ROWS          << ','
-       << "\"simTime\":"  << simTime       << ','
-       << "\"avgT\":"     << avgT          << ','
-       << "\"avgWind\":"  << avgWind       << ','
-       << "\"avgPrecip\":" << avgPrecip    << ',';
-
-    arr("T", [](const Cell& c) { return c.T; }); os << ',';
-    arr("P", [](const Cell& c) { return c.P; }); os << ',';
-    arr("U", [](const Cell& c) { return c.U; }); os << ',';
-    arr("V", [](const Cell& c) { return c.V; }); os << ',';
-    arr("H", [](const Cell& c) { return c.H; }); os << ',';
-    arr("R", [](const Cell& c) { return c.R; }); os << ',';
-
-    // StormPotential: warm+moist+low-pressure anomaly proxy
-    os << "\"SP\":[";
+    // ── StormPotential per cell (proxy for convective instability) ──
+    // SP = max(0, warmAnomaly) * H * max(0, pressureAnomaly / 5): favours
+    // warm, moist, low-pressure cells without claiming CAPE accuracy.
+    std::array<float, SIZE> sp{};
     for (int i = 0; i < SIZE; i++) {
-        int r = i / COLS;
-        float warmAnom = std::max(0.0f, g[i].T - zonalT[r]);
-        float presAnom = std::max(0.0f, (zonalP[r] - g[i].P) / 5.0f);
-        float sp = warmAnom * g[i].H * presAnom;
-        os << std::setprecision(1) << sp;
-        if (i < SIZE - 1) os << ',';
+        const int r = i / COLS;
+        const float warmAnom = std::max(0.0f, g[i].T - zonalT[r]);
+        const float presAnom = std::max(0.0f, (zonalP[r] - g[i].P) / 5.0f);
+        sp[i] = warmAnom * g[i].H * presAnom;
     }
-    os << ']';
 
-    os << ",\"storms\":"  << storms;
-    os << ",\"fronts\":"  << fronts;
+    // ── Per-cell arrays: JSON text and quantized int16 in one pass ──
+    const auto fieldValue = [&](int field, int i) -> float {
+        switch (field) {
+        case 0: return g[i].T;
+        case 1: return g[i].P;
+        case 2: return g[i].U;
+        case 3: return g[i].V;
+        case 4: return g[i].H;
+        case 5: return g[i].R;
+        default: return sp[i];
+        }
+    };
+    frame->packed.resize(static_cast<std::size_t>(GridCodec::FIELD_COUNT) * SIZE);
+    std::string& arrays = frame->arrays;
+    arrays.reserve(static_cast<std::size_t>(GridCodec::FIELD_COUNT) * SIZE * 6);
+    for (int f = 0; f < GridCodec::FIELD_COUNT; f++) {
+        const auto& field = GridCodec::FIELDS[f];
+        if (f) arrays += ',';
+        arrays += '"';
+        arrays += field.name;
+        arrays += "\":[";
+        for (int i = 0; i < SIZE; i++) {
+            const float v = fieldValue(f, i);
+            if (i) arrays += ',';
+            GridCodec::appendNumber(arrays, v, field.decimals);
+            frame->packed[static_cast<std::size_t>(f) * SIZE + i] =
+                GridCodec::quantize(v, field);
+        }
+        arrays += ']';
+    }
+    return frame;
+}
 
-    os << '}';
-    return os.str();
+std::shared_ptr<const GridFrame> GridSim::frame() const {
+    // Serialize builders: concurrent callers for the same version wait for
+    // one build instead of each re-serializing ~100 KB.
+    std::lock_guard<std::mutex> frameLock(frameMtx_);
+    if (frameCache_ && frameCache_->version == version_.load()) return frameCache_;
+
+    std::array<Cell, SIZE> g;
+    double simTime;
+    long long tick;
+    std::uint64_t version;
+    {
+        std::lock_guard<std::mutex> lk(mutex_);
+        g       = grid_;
+        simTime = simTime_;
+        tick    = tick_.load();
+        version = version_.load();
+    }
+    frameCache_ = buildFrame(g, simTime, tick, version);
+    return frameCache_;
+}
+
+std::string GridSim::getStateJson() const {
+    FrameExtras extras;
+    extras.speed = speed();
+    return GridCodec::composeJson(*frame(), extras);
 }

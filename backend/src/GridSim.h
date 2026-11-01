@@ -1,10 +1,13 @@
 #pragma once
 #include <array>
 #include <atomic>
+#include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
+#include "GridCodec.h"
 
 class GridSim {
 public:
@@ -44,6 +47,13 @@ public:
     float speed()   const { return speed_.load(); }
     double simTime() const;
 
+    // Derived state (stats, storms, fronts, serialized arrays) for the current
+    // grid, built at most once per state version and shared by all callers.
+    std::shared_ptr<const GridFrame> frame() const;
+    std::uint64_t stateVersion() const { return version_.load(); }
+
+    // Full JSON state with default extras (speed only); controllers compose
+    // their own extras through GridCodec.
     std::string getStateJson() const;
     std::array<Cell, SIZE> getGrid() const;
     long long tick() const { return tick_.load(); }
@@ -81,6 +91,12 @@ public:
     // carry the remainder in `accum` (e.g. 0.5x runs a step every other tick).
     static int stepsForTick(float speed, float& accum);
 
+    // True when a loop iteration moved the tick into a new 30-step bucket.
+    static bool shouldRecordHistory(long long tickBefore, long long tickAfter) {
+        return tickAfter / HISTORY_EVERY != tickBefore / HISTORY_EVERY;
+    }
+    static constexpr int HISTORY_EVERY = 30;
+
     // Helper geometry — static so physicsStep can use them without an instance
     static float cellLat(int r) { return -87.5f + r * 5.0f; }
     static float cellLon(int c) { return -177.5f + c * 5.0f; }
@@ -105,6 +121,10 @@ private:
         const std::array<Cell, SIZE>& cur,
         double simTime, float dt);
 
+    static std::shared_ptr<GridFrame> buildFrame(const std::array<Cell, SIZE>& g,
+                                                 double simTime, long long tick,
+                                                 std::uint64_t version);
+
     std::array<Cell, SIZE>  grid_;
     std::array<Nudge, SIZE> nudge_;
     mutable std::mutex      mutex_;
@@ -113,12 +133,13 @@ private:
     std::atomic<bool>      running_{false};
     std::atomic<float>     speed_{1.0f};
     std::atomic<long long> tick_{0};
+    std::atomic<std::uint64_t> version_{1};  // bumped on every grid mutation
+
+    mutable std::mutex                        frameMtx_;
+    mutable std::shared_ptr<const GridFrame>  frameCache_;
 
     double simTime_{0.0};
     float stepAccum_{0.0f};   // fractional-step carry for the loop (sim thread only)
-
-    // Zonal mean pressure per row (updated each step, used for storm detection)
-    std::array<float, ROWS> zonalMeanP_{};
 
     // History ring buffer — stores one snapshot every 30 ticks (~3 s real time)
     static constexpr int HISTORY_CAP = 120;
