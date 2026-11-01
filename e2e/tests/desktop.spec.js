@@ -21,7 +21,7 @@ test('boots on one compressed stream and follows layer shortcuts', async ({ page
   await expect(page.locator('.left-rail')).toContainText('hPa')
 
   await page.keyboard.press('3')
-  await expect(page.getByRole('radio', { name: 'Pressure' }).first()).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('radio', { name: 'Pressure' }).first()).toHaveAttribute('aria-checked', 'true')
   await expect(page).toHaveURL(/layer=pressure/)
 
   expect(errors).toEqual([])
@@ -30,7 +30,7 @@ test('boots on one compressed stream and follows layer shortcuts', async ({ page
 test('a shared link restores the layer', async ({ page }) => {
   const errors = watchErrors(page)
   await openApp(page, '#lat=44.43&lon=26.10&layer=humidity')
-  await expect(page.getByRole('radio', { name: 'Humidity' }).first()).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('radio', { name: 'Humidity' }).first()).toHaveAttribute('aria-checked', 'true')
   expect(errors).toEqual([])
 })
 

@@ -49,7 +49,7 @@ export default function WeatherHUD({
         </div>
       </header>
 
-      <div className="dock-bottom">
+      <section className="dock-bottom" aria-label="Cities and simulation speed">
         <CityChips className="chips glass" locations={locations} activeCity={activeCity}
           busy={seeding} onSelect={onSeed} />
         <div className="speed-bar glass">
@@ -59,13 +59,13 @@ export default function WeatherHUD({
             {seeding ? '⟳ Seeding…' : activeCity ? `📍 ${activeCity}` : '🌐 Click the globe'}
           </span>
         </div>
-      </div>
+      </section>
 
-      <div className="dock-bottom-right">
+      <section className="dock-bottom-right" aria-label="Storms and view controls">
         <StormControls storms={gridData?.storms} tourActive={tourActive} onToggleTour={onToggleTour}
           onFocus={onFocus} prefs={prefs} />
         <GlobeToolbar api={globeApi} vertical fullscreen={fullscreen} onShare={onShare} />
-      </div>
+      </section>
     </>
   )
 }

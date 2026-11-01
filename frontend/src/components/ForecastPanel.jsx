@@ -228,12 +228,12 @@ export default function ForecastPanel({ layout, open, onOpenChange, onPreviewSna
   }
 
   return (
-    <div className="time-dock">
+    <section className="time-dock" aria-label="Time navigator">
       {open && (
-        <section className="time-panel glass panel is-open" aria-label="Time navigator">
+        <div className="time-panel glass panel is-open">
           {header}
           {body}
-        </section>
+        </div>
       )}
       <div className="time-tabs glass" role="toolbar" aria-label="Open time navigator">
         {TABS.map(t => (
@@ -247,6 +247,6 @@ export default function ForecastPanel({ layout, open, onOpenChange, onPreviewSna
           </button>
         ))}
       </div>
-    </div>
+    </section>
   )
 }

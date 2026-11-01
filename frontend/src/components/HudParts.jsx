@@ -16,16 +16,35 @@ export function StatusIndicator({ status, compact = false }) {
   )
 }
 
+// Radio-group keyboard model (WAI-ARIA APG): one tab stop for the group,
+// arrow keys move and select, Home/End jump to the ends.
+const RADIO_STEP = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }
+
+function radioKeyDown(event, values, current, onChange) {
+  const step = RADIO_STEP[event.key]
+  const edge = event.key === 'Home' ? 0 : event.key === 'End' ? values.length - 1 : undefined
+  if (step === undefined && edge === undefined) return
+  event.preventDefault()
+  const index = Math.max(0, values.indexOf(current))
+  const next = edge ?? (index + step + values.length) % values.length
+  onChange(values[next])
+  event.currentTarget.querySelectorAll('[role="radio"]')[next]?.focus()
+}
+
+const LAYER_IDS = LAYERS.map(layer => layer.id)
+
 export function LayerSwitcher({ value, onChange, showLabels = true, className = 'layers' }) {
+  const tabStop = LAYER_IDS.includes(value) ? value : LAYER_IDS[0]
   return (
-    <div className={className} role="radiogroup" aria-label="Map layer">
+    <div className={className} role="radiogroup" aria-label="Map layer"
+      onKeyDown={event => radioKeyDown(event, LAYER_IDS, value, onChange)}>
       {LAYERS.map(layer => (
         <button
           key={layer.id}
           type="button"
           role="radio"
           aria-checked={value === layer.id}
-          aria-pressed={value === layer.id}
+          tabIndex={layer.id === tabStop ? 0 : -1}
           className="btn btn--sm layer-btn"
           style={{ '--tone': layer.tone }}
           title={`${layer.label} (${layer.key})`}
@@ -40,13 +59,14 @@ export function LayerSwitcher({ value, onChange, showLabels = true, className = 
   )
 }
 
+// Toggle buttons rather than radios: every change is a rate-limited request
+// that affects all viewers, so arrow keys must not fire one per press.
 export function SpeedControl({ speed, onChange, disabled }) {
   return (
-    <div className="segmented" role="radiogroup" aria-label="Simulation speed">
+    <div className="segmented" role="group" aria-label="Simulation speed">
       {SPEEDS.map(v => (
-        <button key={v} type="button" role="radio" className="btn btn--sm"
+        <button key={v} type="button" className="btn btn--sm"
           style={{ '--tone': '#a855f7' }}
-          aria-checked={Math.abs(speed - v) < 1e-6}
           aria-pressed={Math.abs(speed - v) < 1e-6}
           disabled={disabled}
           onClick={() => onChange(v)}>
