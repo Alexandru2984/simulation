@@ -1,16 +1,31 @@
-# React + Vite
+# Weather Simulation — frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + Three.js (via `@react-three/fiber`) client for
+[simulation.micutu.com](https://simulation.micutu.com). It renders the C++
+backend's 36×72 global grid on a WebGL globe and drives the shared simulation
+through the REST and WebSocket API documented in the root `README.md`.
 
-Currently, two official plugins are available:
+## Commands
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+npm ci --ignore-scripts   # reproducible install (lifecycle scripts disabled)
+npm run dev               # Vite dev server on :5173, proxies /api and /ws to 127.0.0.1:8094
+npm test                  # node:test unit tests (pure modules only, no DOM)
+npm run lint              # ESLint flat config (React hooks + refresh rules)
+npm run build             # production bundle in dist/
+```
 
-## React Compiler
+Node 22 or newer is required.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Layout
 
-## Expanding the ESLint configuration
+| Path | Purpose |
+| --- | --- |
+| `src/App.jsx` | Top-level state: sockets, overlay mode, placement, popups |
+| `src/components/` | Globe layers (`*Layer`, `*Particles`, `GridOverlay`) and HUD panels |
+| `src/hooks/` | Resilient WebSocket manager, FPS sampling |
+| `src/utils/` | Pure helpers (grid sampling, geo math, payload decoding) with tests |
+| `public/` | Static files served as-is (textures, icons, robots.txt, manifest) |
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Pure modules (`*.js` next to a `*.test.js`) must not touch the DOM so they can
+run under `node --test`.
