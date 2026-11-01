@@ -85,6 +85,7 @@ public:
 
 #ifdef GRID_SIM_TESTING
     void runTestSteps(int steps);
+    void resetForTesting();
 #endif
 
     // Steps to run this tick for a given speed multiplier. Fractional speeds

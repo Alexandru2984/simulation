@@ -17,6 +17,17 @@ static constexpr float OMEGA      = 7.2921e-5f;  // Earth rotation rad/s
 static constexpr float DT         = 0.05f;        // physics timestep seconds
 static constexpr float PHYSICS_HZ = 10.0f;        // real-time steps per second
 
+// Dynamics tuning. The model compresses a day into one simulated hour, so the
+// Coriolis parameter is scaled up; 2000× gives an inertial turning rate
+// comparable to the friction rate, which yields mid-latitude westerlies of
+// ~10 m/s and a global mean wind of 8–10 m/s once spun up.
+static constexpr float CORIOLIS_SCALE = 2000.0f;
+static constexpr float PGF_SCALE      = 0.5f;   // (m/s²) per hPa of half-difference
+static constexpr float FRICTION       = 0.08f;  // 1/s linear drag
+// Pressure relaxes toward its thermal target slowly enough that an injected
+// low lives for tens of seconds instead of vanishing within five.
+static constexpr float PRESSURE_RELAX = 0.05f;  // 1/s
+
 GridSim& GridSim::instance() {
     static GridSim inst;
     return inst;
@@ -102,7 +113,10 @@ std::array<GridSim::Cell, GridSim::SIZE> GridSim::physicsStep(
             // 1. Solar insolation
             float ha      = hourAngle0 + lonR;
             float solar   = cosLat * std::cos(ha);
-            float T_eq    = 38.0f * cosLat * cosLat - 25.0f;
+            // Radiative equilibrium: ~27 °C at the equator, −18 °C at the poles;
+            // with the day-side bonus the global mean settles near 15 °C (the
+            // old −25 °C offset drifted the planet down to ~3 °C).
+            float T_eq    = 45.0f * cosLat * cosLat - 18.0f;
             float dT_solar = (T_eq + 18.0f * std::max(0.0f, solar) - cur.T) * 0.003f * dt;
 
             // 2. Thermal diffusion
@@ -111,18 +125,22 @@ std::array<GridSim::Cell, GridSim::SIZE> GridSim::physicsStep(
 
             // 3. Pressure relaxation toward temperature
             float P_target = 1013.25f + 1.5f * (cur.T - 15.0f);
-            float dP       = (P_target - cur.P) * 0.8f * dt;
+            float dP       = (P_target - cur.P) * PRESSURE_RELAX * dt;
 
-            // 4. Wind from pressure gradient force + Coriolis
+            // 4. Wind: pressure-gradient acceleration, then Coriolis applied as
+            //    an exact rotation of (U, V) by −f·dt. Forward Euler on the
+            //    Coriolis terms multiplies |v| by √(1 + (f·dt)²) every step,
+            //    which pinned almost every cell at the 70 m/s clamp with
+            //    zonal means flipping sign from one minute to the next.
             float dPdx   = (nE.P - nW.P) * 0.5f;
             float dPdy   = (nN.P - nS.P) * 0.5f;
-            float pgfScale = 0.08f;
-            float dU = (-dPdx * pgfScale + f * 1e5f * cur.V) * dt;
-            float dV = (-dPdy * pgfScale - f * 1e5f * cur.U) * dt;
-
-            float friction = 0.08f;
-            float newU = cur.U * (1.0f - friction * dt) + dU;
-            float newV = cur.V * (1.0f - friction * dt) + dV;
+            float u = cur.U - dPdx * PGF_SCALE * dt;
+            float v = cur.V - dPdy * PGF_SCALE * dt;
+            float turn = f * CORIOLIS_SCALE * dt;
+            float cosTurn = std::cos(turn), sinTurn = std::sin(turn);
+            float damp = 1.0f - FRICTION * dt;
+            float newU = ( u * cosTurn + v * sinTurn) * damp;
+            float newV = (-u * sinTurn + v * cosTurn) * damp;
 
             float spd = std::sqrt(newU * newU + newV * newV);
             if (spd > 70.0f) { newU *= 70.0f / spd; newV *= 70.0f / spd; }
@@ -552,6 +570,16 @@ void GridSim::runTestSteps(int steps) {
         if (tick_.load() % 30 == 0) recordHistory();
     }
 }
+
+void GridSim::resetForTesting() {
+    stop();
+    std::lock_guard<std::mutex> lk(mutex_);
+    initGrid();
+    nudge_.fill(Nudge{});
+    simTime_ = 0.0;
+    tick_ = 0;
+    version_++;
+}
 #endif
 
 // ── History ring buffer ───────────────────────────────────────────────────────
@@ -713,7 +741,16 @@ std::shared_ptr<GridFrame> GridSim::buildFrame(const std::array<Cell, SIZE>& g,
             int i = idx(r, c);
             float P_anom = g[i].P - zonalP[r];
             if (P_anom > -6.0f) continue;
-            float windSpd = std::sqrt(g[i].U * g[i].U + g[i].V * g[i].V);
+            // Strongest wind around the centre: a cyclone's eye is calm, so
+            // testing only the minimum-pressure cell missed injected storms
+            // whenever the background flow there was weak.
+            float windSpd = 0.0f;
+            for (int dr = -1; dr <= 1; dr++) {
+                for (int dc = -1; dc <= 1; dc++) {
+                    const Cell& n = g[idx(clampR(r + dr), wrapC(c + dc))];
+                    windSpd = std::max(windSpd, std::sqrt(n.U * n.U + n.V * n.V));
+                }
+            }
             if (windSpd < 7.0f) continue;
             bool isMin = g[i].P < g[idx(clampR(r-1), c)].P &&
                          g[i].P < g[idx(clampR(r+1), c)].P &&

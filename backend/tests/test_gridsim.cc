@@ -5,6 +5,9 @@
 #include <cstring>
 #include "test_framework.h"
 #include <cmath>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 #include <cassert>
 #include <cstdio>
 #include <filesystem>
@@ -576,6 +579,88 @@ TEST(event_log_is_bounded_and_ages_out) {
     log.clearForTesting();
 }
 
+// Spin-up from a clean grid: winds must settle at realistic magnitudes with
+// steady mid-latitude westerlies. Forward-Euler Coriolis used to blow every
+// cell up to the 70 m/s clamp and flip zonal means from minute to minute.
+static float meanWind(const std::array<GridSim::Cell, GridSim::SIZE>& g, float* maxOut) {
+    double sum = 0, wsum = 0;
+    float maxW = 0;
+    for (int r = 0; r < GridSim::ROWS; r++) {
+        const double w = std::cos(GridSim::cellLat(r) * M_PI / 180.0);
+        for (int c = 0; c < GridSim::COLS; c++) {
+            const auto& cell = g[r * GridSim::COLS + c];
+            const float s = std::sqrt(cell.U * cell.U + cell.V * cell.V);
+            sum += s * w; wsum += w; maxW = std::max(maxW, s);
+        }
+    }
+    if (maxOut) *maxOut = maxW;
+    return static_cast<float>(sum / wsum);
+}
+
+static float zonalMeanU(const std::array<GridSim::Cell, GridSim::SIZE>& g, int row) {
+    float sum = 0;
+    for (int c = 0; c < GridSim::COLS; c++) sum += g[row * GridSim::COLS + c].U;
+    return sum / GridSim::COLS;
+}
+
+TEST(spin_up_winds_stay_physical) {
+    GridSim& sim = GridSim::instance();
+    sim.resetForTesting();
+    sim.runTestSteps(2500);
+    auto early = sim.getGrid();
+    sim.runTestSteps(1500);
+    auto late = sim.getGrid();
+
+    float maxW = 0;
+    const float avg = meanWind(late, &maxW);
+    require(avg > 3.0f && avg < 20.0f, "global mean wind should settle between 3 and 20 m/s");
+    require(maxW < 40.0f, "undisturbed winds must stay well below the 70 m/s clamp");
+
+    const int row45N = 26, row45S = 9;   // 42.5°N and 42.5°S
+    require(zonalMeanU(early, row45N) > 2.0f && zonalMeanU(late, row45N) > 2.0f,
+            "northern mid-latitudes should keep steady westerlies");
+    require(zonalMeanU(early, row45S) > 2.0f && zonalMeanU(late, row45S) > 2.0f,
+            "southern mid-latitudes should keep steady westerlies");
+}
+
+TEST(spin_up_global_temperature_is_earthlike) {
+    GridSim& sim = GridSim::instance();
+    sim.resetForTesting();
+    sim.runTestSteps(6000);
+    auto g = sim.getGrid();
+    double sum = 0, wsum = 0;
+    for (int r = 0; r < GridSim::ROWS; r++) {
+        const double w = std::cos(GridSim::cellLat(r) * M_PI / 180.0);
+        for (int c = 0; c < GridSim::COLS; c++) { sum += g[r * GridSim::COLS + c].T * w; wsum += w; }
+    }
+    const double mean = sum / wsum;
+    require(mean > 9.0 && mean < 21.0, "area-weighted mean temperature should stay near 15 °C");
+}
+
+TEST(cyclone_with_calm_eye_is_detected) {
+    GridSim& sim = GridSim::instance();
+    sim.resetForTesting();               // calm: U = V = 0 everywhere
+    sim.inject(10.0f, 60.0f, GridSim::EventType::CYCLONE, 1.0f);
+    sim.runTestSteps(3);
+    const std::string json = sim.getStateJson();
+    require(json.find("\"storms\":[{") != std::string::npos,
+            "the eyewall winds should qualify the low as a storm");
+}
+
+TEST(injected_cyclone_persists_and_decays) {
+    GridSim& sim = GridSim::instance();
+    sim.resetForTesting();
+    sim.runTestSteps(1500);
+    sim.inject(45.0f, 0.0f, GridSim::EventType::CYCLONE, 1.5f);
+    sim.runTestSteps(150);   // 15 s of real time at 1×
+    require(sim.getStateJson().find("\"storms\":[{") != std::string::npos,
+            "an injected cyclone should still be detected after 150 steps");
+    sim.runTestSteps(3000);
+    float maxW = 0;
+    meanWind(sim.getGrid(), &maxW);
+    require(maxW < 40.0f, "the cyclone's winds should decay instead of growing");
+}
+
 int main() {
     printf("\n=== GridSim Unit Tests ===\n\n");
 
@@ -626,6 +711,12 @@ int main() {
     RUN(binary_frame_layout_roundtrips);
     RUN(json_state_includes_speed_and_events);
     RUN(event_log_is_bounded_and_ages_out);
+
+    // Dynamics regression checks (run last: they reset the shared grid)
+    RUN(spin_up_winds_stay_physical);
+    RUN(spin_up_global_temperature_is_earthlike);
+    RUN(cyclone_with_calm_eye_is_detected);
+    RUN(injected_cyclone_persists_and_decays);
 
     printf("\n=== %d passed, %d failed ===\n\n", passed, failed);
     return failed > 0 ? 1 : 0;
