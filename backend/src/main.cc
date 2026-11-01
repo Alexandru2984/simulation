@@ -101,6 +101,28 @@ static void scheduleAssimilation() {
     }
 }
 
+// snake_case codes, matching the ones the handlers return.
+static const char* frameworkErrorCode(drogon::HttpStatusCode code) {
+    switch (code) {
+        case drogon::k400BadRequest:           return "bad_request";
+        case drogon::k403Forbidden:            return "forbidden";
+        case drogon::k404NotFound:             return "not_found";
+        case drogon::k405MethodNotAllowed:     return "method_not_allowed";
+        case drogon::k413RequestEntityTooLarge: return "payload_too_large";
+        case drogon::k414RequestURITooLarge:   return "uri_too_long";
+        case drogon::k431RequestHeaderFieldsTooLarge: return "headers_too_large";
+        default:                               return "http_error";
+    }
+}
+
+static drogon::HttpResponsePtr jsonError(drogon::HttpStatusCode code) {
+    auto resp = drogon::HttpResponse::newHttpResponse();
+    resp->setStatusCode(code);
+    resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    resp->setBody(std::string(R"({"error":")") + frameworkErrorCode(code) + "\"}");
+    return resp;
+}
+
 int main() {
     if (GridSim::instance().loadState(statePath()))
         LOG_INFO << "Restored grid state from " << statePath();
@@ -122,7 +144,14 @@ int main() {
        .setClientMaxBodySize(64 * 1024)
        // Clients never send application messages. Keep control frames working
        // while preventing ignored messages from consuming 128 KiB each.
-       .setClientMaxWebSocketMessageSize(4 * 1024);
+       .setClientMaxWebSocketMessageSize(4 * 1024)
+       // Framework-generated errors are JSON like every handler's, and no
+       // response advertises the framework name and version.
+       .setCustom404Page(jsonError(drogon::k404NotFound))
+       .setCustomErrorHandler([](drogon::HttpStatusCode code, const drogon::HttpRequestPtr&) {
+           return jsonError(code);
+       })
+       .enableServerHeader(false);
 
     app.getLoop()->runEvery(1.0, []() { broadcastWeather(); });
     app.getLoop()->runEvery(1.0, []() { GridWsController::broadcastGrid(); });

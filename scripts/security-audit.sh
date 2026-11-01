@@ -205,13 +205,37 @@ else
 fi
 
 section "Runtime API controls"
-for endpoint in healthz readyz metrics version; do
+for endpoint in healthz readyz; do
     if curl -fsS "https://${domain}/api/${endpoint}" >/dev/null; then
         pass "/api/${endpoint} returns successfully"
     else
         fail "/api/${endpoint} failed"
     fi
 done
+
+# Build SHA, build time and uptime stay on 127.0.0.1 (deploy.sh, export-metrics.sh).
+for endpoint in metrics version; do
+    status="$(http_code "https://${domain}/api/${endpoint}")"
+    expect_equal "$status" 404 "/api/${endpoint} is not exposed publicly" "/api/${endpoint} returned "
+done
+
+unknown_status="$(http_code "https://${domain}/this-page-does-not-exist")"
+expect_equal "$unknown_status" 404 "unknown paths return a real 404 (no soft-404)" "unknown path returned "
+
+dotfile_status="$(http_code "https://${domain}/.git/config")"
+expect_equal "$dotfile_status" 404 "dotfiles are not served" "/.git/config returned "
+
+for file in robots.txt sitemap.xml manifest.webmanifest; do
+    status="$(http_code "https://${domain}/${file}")"
+    expect_equal "$status" 200 "/${file} is served" "/${file} returned "
+done
+
+api_404="$(curl -sS -D - "https://${domain}/api/does-not-exist" 2>/dev/null || true)"
+if rg -qi 'drogon' <<<"$api_404"; then
+    fail "backend 404 reveals the framework name or version"
+else
+    pass "backend 404 does not reveal the framework"
+fi
 
 no_origin_status="$(http_code -X POST -H 'Content-Type: application/json' --data '{"value":1}' "https://${domain}/api/weather/speed")"
 expect_equal "$no_origin_status" 403 "mutation without Origin is rejected" "mutation without Origin returned "

@@ -119,17 +119,48 @@ configuration before changing either file:
 sudo nginx -T
 ```
 
+`sites-enabled/simulation.micutu.com` is a symlink to
+`sites-available/simulation.micutu.com`. Install over the target, not the link:
+`install` would replace the symlink with a regular file and leave the two copies
+out of sync.
+
 After backing up the current vhost and security-header snippet, install the
 candidate files, validate, and only then reload:
 
 ```bash
+ts="$(date -u +%Y%m%dT%H%M%SZ)"
+sudo cp -a /etc/nginx/sites-available/simulation.micutu.com "/root/simulation.micutu.com.nginx.${ts}"
+sudo cp -a /etc/nginx/snippets/simulation-security-headers.conf "/root/simulation-security-headers.${ts}"
 sudo install -m 0644 deploy/nginx/snippets/simulation-security-headers.conf \
   /etc/nginx/snippets/simulation-security-headers.conf
 sudo install -m 0644 deploy/nginx/simulation.micutu.com.conf \
-  /etc/nginx/sites-enabled/simulation.micutu.com
-sudo nginx -t
-sudo systemctl reload nginx.service
+  /etc/nginx/sites-available/simulation.micutu.com
+sudo nginx -t && sudo systemctl reload nginx.service
 ```
+
+Keep backups outside `sites-available/`. A `*.bak*` file there is harmless
+only as long as nothing includes `sites-available/*`.
+
+What the vhost enforces:
+
+- `/` is the only HTML page (app state lives in the URL hash). Unknown paths
+  get a real `404` with `404.html`, so crawlers never see soft-404s.
+- Caching: `/assets/` (content-hashed) for a year, immutable. Textures, icons,
+  favicon and `og-image.jpg` for a week with `stale-while-revalidate`. The
+  manifest for a day, `robots.txt` and `sitemap.xml` for an hour. `index.html`
+  and `404.html` are `no-cache`.
+- `gzip` for CSS/JS/JSON/SVG/XML/manifest. The global config only covers
+  `text/html`.
+- `/api/metrics` and `/api/version` return `404` publicly, because they
+  reveal the build SHA, build time and uptime. `scripts/deploy.sh` and
+  `scripts/export-metrics.sh` read them on `127.0.0.1:8094`.
+- Rate-limited requests get `429` rather than `503`. Dotfiles are never served.
+- Every location that sets its own header re-includes the security-header
+  snippet, because nginx drops server-level `add_header` in such locations.
+
+To test a candidate vhost without touching the system nginx, run a private
+instance as an unprivileged user. Strip the TLS lines, listen on a high port,
+point it at a local backend, then probe with `curl` and a browser.
 
 If `nginx -t` fails, restore the backups immediately and run `nginx -t` again;
 do not reload the invalid configuration.
@@ -166,8 +197,8 @@ that is not restricted to Cloudflare.
 ```bash
 curl -fsS https://simulation.micutu.com/api/healthz
 curl -fsS https://simulation.micutu.com/api/readyz
-curl -fsS https://simulation.micutu.com/api/version
-curl -fsS https://simulation.micutu.com/api/metrics
+curl -fsS http://127.0.0.1:8094/api/version   # operator-only, 404 publicly
+curl -fsS http://127.0.0.1:8094/api/metrics   # operator-only, 404 publicly
 curl -fsS -D - -o /dev/null https://simulation.micutu.com/
 systemctl is-active simulation-canary.service
 journalctl -u simulation-canary.service --since '-10 minutes' --no-pager
