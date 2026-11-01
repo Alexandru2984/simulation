@@ -3,7 +3,10 @@
 #include "RateLimiter.h"
 #include "OpenWeatherObservation.h"
 #include "OpenWeatherResponse.h"
+#include "OpenWeatherClient.h"
+#include "TtlCache.h"
 #include "test_framework.h"
+#include <cmath>
 #include <limits>
 
 // ── Content type ──────────────────────────────────────────────────────────────
@@ -219,6 +222,97 @@ TEST(limiter_tolerates_time_going_backwards) {
     require(!lim.allowAt(50.0), "bucket must be empty after two");
 }
 
+
+// ── Secrets, search text and cache ───────────────────────────────────────────
+
+TEST(constant_time_token_compare) {
+    require(Security::constantTimeEquals("s3cret-token", "s3cret-token"),
+            "identical tokens must match");
+    require(!Security::constantTimeEquals("s3cret-token", "s3cret-tokeN"),
+            "last-byte difference must fail");
+    require(!Security::constantTimeEquals("s3cret", "s3cret-token"),
+            "prefix of the token must fail");
+    require(!Security::constantTimeEquals("", "s3cret-token"), "empty header must fail");
+    require(Security::constantTimeEquals("", ""), "two empty strings are equal");
+}
+
+TEST(search_query_keeps_international_names) {
+    std::string out;
+    require(Security::normalizeSearchQuery("Bucure\xC8\x99ti", out) &&
+                out == "bucure\xC8\x99ti",
+            "Romanian comma-below s must survive");
+    require(Security::normalizeSearchQuery("S\xC3\xA3o Paulo, BR", out) &&
+                out == "s\xC3\xA3o paulo, br",
+            "accented Latin plus country suffix must survive");
+    require(Security::normalizeSearchQuery("\xD0\x9C\xD0\xBE\xD1\x81\xD0\xBA\xD0\xB2\xD0\xB0", out),
+            "Cyrillic must survive");
+    require(Security::normalizeSearchQuery("\xE6\x9D\xB1\xE4\xBA\xAC", out),
+            "two CJK characters must be enough");
+    require(Security::normalizeSearchQuery("  New   York  ", out) && out == "new york",
+            "whitespace must collapse and trim");
+    require(Security::normalizeSearchQuery("N\xE2\x80\x99" "Djamena", out),
+            "curly apostrophe must be accepted");
+    require(Security::normalizeSearchQuery("St. John's", out) && out == "st. john's",
+            "ASCII apostrophe and period must be accepted");
+}
+
+TEST(search_query_rejects_syntax_and_invalid_utf8) {
+    std::string out;
+    require(!Security::normalizeSearchQuery("", out), "empty query must fail");
+    require(!Security::normalizeSearchQuery("a", out), "single letter must fail");
+    require(!Security::normalizeSearchQuery("--", out), "punctuation only must fail");
+    require(!Security::normalizeSearchQuery("paris&appid=x", out), "query syntax must fail");
+    require(!Security::normalizeSearchQuery("paris\nlondon", out), "newline must fail");
+    require(!Security::normalizeSearchQuery("pa%72is", out), "percent escapes must fail");
+    require(!Security::normalizeSearchQuery("caf\xC3", out), "truncated UTF-8 must fail");
+    require(!Security::normalizeSearchQuery("\xC0\xAF" "ab", out), "overlong encoding must fail");
+    require(!Security::normalizeSearchQuery("\xED\xA0\x80" "ab", out), "surrogate must fail");
+    require(!Security::normalizeSearchQuery("pa\xE2\x80\x8Bris", out),
+            "zero-width space must fail");
+    require(!Security::normalizeSearchQuery("ab\xE2\x80\xAE" "cd", out),
+            "bidi override must fail");
+    require(!Security::normalizeSearchQuery(std::string(101, 'a'), out),
+            "query above 100 bytes must fail");
+}
+
+TEST(percent_encoding_is_strict) {
+    require(Security::percentEncode("new york") == "new%20york", "space must be %20");
+    require(Security::percentEncode("a&b=c?d#e+f") == "a%26b%3Dc%3Fd%23e%2Bf",
+            "query delimiters must be escaped");
+    require(Security::percentEncode("\xC8\x99") == "%C8%99", "UTF-8 bytes must be escaped");
+    require(Security::percentEncode("Az09-._~") == "Az09-._~", "unreserved stays literal");
+}
+
+TEST(rounded_coordinates_share_cache_entries) {
+    require(OpenWeather::roundedCoordinate(44.4268) == "44.43", "rounds to 2 decimals");
+    require(OpenWeather::roundedCoordinate(-0.001) == "0.00", "negative zero is folded");
+    require(OpenWeather::roundedCoordinate(-122.4194) == "-122.42", "negative keeps sign");
+}
+
+TEST(ttl_cache_expires_and_stays_bounded) {
+    using namespace std::chrono;
+    const auto t0 = TtlCache::Clock::time_point{} + hours(1);
+    TtlCache cache(2);
+    cache.put("a", "1", seconds(10), t0);
+    cache.put("b", "2", seconds(20), t0);
+    require(cache.get("a", t0 + seconds(5)).value_or("") == "1", "fresh entry is served");
+    require(!cache.get("a", t0 + seconds(10)), "entry expires at its deadline");
+    cache.put("c", "3", seconds(30), t0);
+    cache.put("d", "4", seconds(40), t0);
+    require(cache.size() == 2, "cache must never exceed its cap");
+    require(!cache.get("b", t0) && cache.get("d", t0), "soonest-expiring entry is evicted");
+}
+
+TEST(wind_direction_uses_meteorological_convention) {
+    float U = 0, V = 0;
+    windComponents(10.0, 0.0, U, V);    // northerly: blows toward the south
+    require(std::fabs(U) < 1e-4f && std::fabs(V + 10.0f) < 1e-4f, "0 deg must move south");
+    windComponents(10.0, 270.0, U, V);  // westerly: blows toward the east
+    require(std::fabs(U - 10.0f) < 1e-4f && std::fabs(V) < 1e-4f, "270 deg must move east");
+    windComponents(10.0, 90.0, U, V);   // easterly trade wind: blows west
+    require(std::fabs(U + 10.0f) < 1e-4f, "90 deg must move west");
+}
+
 int main() {
     printf("\n=== Security Unit Tests ===\n\n");
 
@@ -234,6 +328,13 @@ int main() {
     RUN(limiter_refills_over_time);
     RUN(limiter_caps_refill_at_burst);
     RUN(limiter_tolerates_time_going_backwards);
+    RUN(constant_time_token_compare);
+    RUN(search_query_keeps_international_names);
+    RUN(search_query_rejects_syntax_and_invalid_utf8);
+    RUN(percent_encoding_is_strict);
+    RUN(rounded_coordinates_share_cache_entries);
+    RUN(ttl_cache_expires_and_stays_bounded);
+    RUN(wind_direction_uses_meteorological_convention);
 
     printf("\n=== %d passed, %d failed ===\n\n", passed, failed);
     return failed > 0 ? 1 : 0;

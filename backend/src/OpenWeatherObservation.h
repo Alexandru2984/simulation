@@ -2,6 +2,7 @@
 
 #include "Security.h"
 #include <json/json.h>
+#include <cmath>
 #include <string>
 #include <utility>
 
@@ -45,4 +46,14 @@ inline bool parseOpenWeatherObservation(const Json::Value& json,
 
     observation = std::move(parsed);
     return true;
+}
+
+// Meteorological wind direction is where the wind blows FROM, clockwise from
+// north. Grid components are U = eastward and V = northward motion, so a
+// northerly (0°) wind moves south: U = 0, V = -speed.
+inline void windComponents(double speed, double fromDegrees, float& U, float& V) {
+    constexpr double PI = 3.14159265358979323846;
+    const double radians = fromDegrees * PI / 180.0;
+    U = static_cast<float>(-speed * std::sin(radians));
+    V = static_cast<float>(-speed * std::cos(radians));
 }

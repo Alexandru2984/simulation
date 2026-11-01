@@ -68,13 +68,11 @@ void WeatherWsController::handleNewConnection(
 }
 
 void WeatherWsController::handleNewMessage(
-    const drogon::WebSocketConnectionPtr& conn,
+    const drogon::WebSocketConnectionPtr&,
     std::string&&,
-    const drogon::WebSocketMessageType& type)
+    const drogon::WebSocketMessageType&)
 {
-    // Respond to ping with pong; ignore other messages
-    if (type == drogon::WebSocketMessageType::Ping)
-        conn->send("", drogon::WebSocketMessageType::Pong);
+    // Drogon already answers pings; clients send no application messages.
 }
 
 void WeatherWsController::handleConnectionClosed(

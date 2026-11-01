@@ -5,7 +5,7 @@
 #include "SeedController.h"
 #include "GridSim.h"
 #include "GridController.h"
-#include "WeatherProxy.h"
+#include "OpenWeatherClient.h"
 #include "SdNotify.h"
 #include "Security.h"
 #include "AssimilationStatus.h"
@@ -17,8 +17,7 @@ void broadcastWeather();
 static const std::string& statePath() {
     static const std::string path = [] {
         const char* env = std::getenv("SIM_STATE_FILE");
-        return std::string(env && *env ? env
-                                       : "/home/micu/simulation/state/grid.snapshot");
+        return std::string(env && *env ? env : "state/grid.snapshot");
     }();
     return path;
 }
@@ -26,8 +25,7 @@ static const std::string& statePath() {
 static const std::string& historyPath() {
     static const std::string path = [] {
         const char* env = std::getenv("SIM_HISTORY_FILE");
-        return std::string(env && *env ? env
-                                       : "/home/micu/simulation/state/history.snapshot");
+        return std::string(env && *env ? env : "state/history.snapshot");
     }();
     return path;
 }
@@ -55,22 +53,20 @@ static const struct { float lat, lon; } ASSIM_CITIES[] = {
 };
 
 static void scheduleAssimilation() {
-    // Fetch OWM for each city and nudge the GridSim
-    const auto& key = WeatherProxy::apiKey();
+    // Fetch OWM for each city and nudge the GridSim. Assimilation is scheduled
+    // (20 calls / 5 min), so it bypasses the user-facing upstream budget.
+    const auto& key = OpenWeather::apiKey();
     if (key.empty()) return;
     AssimilationStatus::instance().markAttempt();
 
-    // One client for all cities — sendRequest keeps it alive across rounds
-    static auto client = drogon::HttpClient::newHttpClient("https://api.openweathermap.org");
-
+    const auto& client = OpenWeather::client();
     for (auto& city : ASSIM_CITIES) {
-        std::ostringstream path;
-        path << "/data/2.5/weather?lat=" << city.lat << "&lon=" << city.lon
-             << "&appid=" << key << "&units=metric";
-
-        auto req    = drogon::HttpRequest::newHttpRequest();
+        auto req = drogon::HttpRequest::newHttpRequest();
         req->setMethod(drogon::Get);
-        req->setPath(path.str());
+        req->setPathEncode(false);
+        req->setPath("/data/2.5/weather?lat=" + OpenWeather::roundedCoordinate(city.lat) +
+                     "&lon=" + OpenWeather::roundedCoordinate(city.lon) +
+                     "&units=metric&appid=" + Security::percentEncode(key));
 
         float capLat = city.lat, capLon = city.lon;
         client->sendRequest(req, [capLat, capLon](
@@ -93,10 +89,8 @@ static void scheduleAssimilation() {
                 return;
             }
 
-            constexpr double PI = 3.14159265358979323846;
-            const double direction = (observation.windDirection - 180.0) * PI / 180.0;
-            const float U = static_cast<float>(observation.windSpeed * std::cos(direction));
-            const float V = static_cast<float>(observation.windSpeed * std::sin(direction));
+            float U = 0.0f, V = 0.0f;
+            windComponents(observation.windSpeed, observation.windDirection, U, V);
             GridSim::instance().assimilate(
                 capLat, capLon,
                 static_cast<float>(observation.temperature),

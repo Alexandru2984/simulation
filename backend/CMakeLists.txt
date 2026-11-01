@@ -42,6 +42,7 @@ add_executable(weather_backend
     src/GridSim.cc
     src/GridController.cc
     src/WeatherProxy.cc
+    src/OpenWeatherClient.cc
 )
 
 # ── Unit tests ────────────────────────────────────────────────────────────────
@@ -55,7 +56,10 @@ target_link_libraries(test_gridsim PRIVATE Drogon::Drogon)
 target_include_directories(test_gridsim PRIVATE src)
 target_compile_definitions(test_gridsim PRIVATE GRID_SIM_TESTING)
 
-add_executable(test_security tests/test_security.cc)
+add_executable(test_security
+    src/OpenWeatherClient.cc
+    tests/test_security.cc
+)
 target_link_libraries(test_security PRIVATE Drogon::Drogon)
 target_include_directories(test_security PRIVATE src)
 

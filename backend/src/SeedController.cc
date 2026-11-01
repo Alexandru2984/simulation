@@ -1,9 +1,9 @@
 #include "SeedController.h"
 #include "GridSim.h"
+#include "OpenWeatherClient.h"
 #include "OpenWeatherObservation.h"
+#include "OpenWeatherResponse.h"
 #include "Security.h"
-#include <drogon/HttpClient.h>
-#include <cstdlib>
 #include <cmath>
 
 // ── Preset city data (fallback when OpenWeather is unavailable) ───────────────
@@ -100,15 +100,13 @@ void SeedController::seedWeather(
         return;
     }
 
-    const char* apiKey = std::getenv("OPENWEATHER_API_KEY");
-
-    auto fallbackResponse = [lat, lon](bool tried_api) {
+    auto fallbackResponse = [lat, lon](bool triedApi) {
         const CityPreset* p = nearestPreset(lat, lon);
         WeatherSim::instance().seed(p->temp, p->pressure, p->wind_speed, p->wind_dir);
 
         Json::Value out;
         out["status"]        = "ok";
-        out["source"]        = tried_api ? "fallback_after_api_error" : "fallback_preset";
+        out["source"]        = triedApi ? "fallback_after_api_error" : "fallback_preset";
         out["city"]          = p->name;
         out["temperature"]   = p->temp;
         out["pressure"]      = p->pressure;
@@ -119,34 +117,21 @@ void SeedController::seedWeather(
         return resp;
     };
 
-    if (!apiKey || std::string(apiKey).empty() || std::string(apiKey) == "YOUR_KEY_HERE") {
+    if (OpenWeather::apiKey().empty()) {
         cb(fallbackResponse(false));
         return;
     }
 
-    // Try OpenWeather API
-    std::string latStr = std::to_string(lat);
-    std::string lonStr = std::to_string(lon);
-    std::string key(apiKey);
-
-    auto client = drogon::HttpClient::newHttpClient("https://api.openweathermap.org");
-    auto owReq  = drogon::HttpRequest::newHttpRequest();
-    owReq->setPath("/data/2.5/weather");
-    owReq->setParameter("lat",   latStr);
-    owReq->setParameter("lon",   lonStr);
-    owReq->setParameter("appid", key);
-    owReq->setParameter("units", "metric");
-
-    client->sendRequest(owReq, [cb = std::move(cb), fallbackResponse](
-        drogon::ReqResult result, const drogon::HttpResponsePtr& owResp) mutable
-    {
-        if (result == drogon::ReqResult::Ok && owResp &&
-            owResp->getStatusCode() == drogon::k200OK &&
-            owResp->body().size() <= 64 * 1024)
-        {
-            const auto json = owResp->getJsonObject();
+    // Same gateway as the realtime popup: one cache entry per ~1 km cell and a
+    // shared upstream budget, so seeding cannot exhaust the API key's quota.
+    OpenWeather::fetchRealtime(lat, lon,
+        [cb = std::move(cb), fallbackResponse](OpenWeather::FetchStatus status,
+                                               const std::string& body) {
+            Json::Value json;
             OpenWeatherObservation observation;
-            if (json && parseOpenWeatherObservation(*json, observation)) {
+            if (status == OpenWeather::FetchStatus::Ok &&
+                OpenWeatherResponse::parseJson(body, json) &&
+                parseOpenWeatherObservation(json, observation)) {
                 WeatherSim::instance().seed(observation.temperature,
                                             observation.pressure,
                                             observation.windSpeed,
@@ -165,10 +150,8 @@ void SeedController::seedWeather(
                 cb(resp);
                 return;
             }
-        }
-        // API error → fallback
-        cb(fallbackResponse(true));
-    }, 8.0);
+            cb(fallbackResponse(true));
+        });
 }
 
 // ── /api/weather/locations ────────────────────────────────────────────────────
@@ -185,6 +168,7 @@ void SeedController::getLocations(
     out["locations"] = list;
     auto resp = drogon::HttpResponse::newHttpJsonResponse(out);
     corsHeaders(resp);
+    resp->addHeader("Cache-Control", "public, max-age=3600");  // static presets
     cb(resp);
 }
 
