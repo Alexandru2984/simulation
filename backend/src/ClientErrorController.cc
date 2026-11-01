@@ -25,8 +25,7 @@ void ClientErrorController::report(
     }
     if (req->body().size() > ClientErrors::kMaxBodyBytes) {
         store.countRejected();
-        cb(Security::json("{\"error\":\"payload_too_large\"}",
-                          drogon::k413RequestEntityTooLarge));
+        cb(Security::error(drogon::k413RequestEntityTooLarge, "payload_too_large"));
         return;
     }
     // Global budget on top of nginx's per-IP limit. Reports are diagnostics:
@@ -34,14 +33,14 @@ void ClientErrorController::report(
     static RateLimiter limiter(120.0, 30.0);
     if (!limiter.allow()) {
         store.countRateLimited();
-        cb(Security::json("{\"error\":\"rate_limited\"}", drogon::k429TooManyRequests));
+        cb(Security::error(drogon::k429TooManyRequests, "rate_limited"));
         return;
     }
 
     ClientErrors::Report report;
     if (!ClientErrors::parseReport(req->body(), Security::allowedOrigin(), report)) {
         store.countRejected();
-        cb(Security::json("{\"error\":\"invalid_report\"}", drogon::k400BadRequest));
+        cb(Security::error(drogon::k400BadRequest, "invalid_report"));
         return;
     }
 
@@ -61,13 +60,14 @@ void ClientErrorController::summary(
     std::function<void(const drogon::HttpResponsePtr&)>&& cb) const
 {
     if (!Security::isDirectLocalRequest(req)) {
-        cb(Security::json("{\"error\":\"not_found\"}", drogon::k404NotFound, "GET"));
+        cb(Security::error(drogon::k404NotFound, "not_found", {}, "GET"));
         return;
     }
     int limit = 20;
     const auto raw = req->getParameter("limit");
     if (!raw.empty() && !Security::parseIntInRange(raw, 1, 200, limit)) {
-        cb(Security::json("{\"error\":\"invalid_limit\"}", drogon::k400BadRequest, "GET"));
+        cb(Security::error(drogon::k400BadRequest, "invalid_limit",
+                           "limit must be an integer from 1 to 200", "GET"));
         return;
     }
     auto resp = Security::json(ClientErrors::compact(ClientErrors::store().summary(limit)),

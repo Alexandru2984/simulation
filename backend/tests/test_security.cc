@@ -314,6 +314,16 @@ TEST(wind_direction_uses_meteorological_convention) {
     require(std::fabs(U + 10.0f) < 1e-4f, "90 deg must move west");
 }
 
+TEST(error_bodies_follow_the_contract) {
+    require(Security::errorBody("rate_limited") == R"({"error":"rate_limited"})",
+            "code only");
+    require(Security::errorBody("out_of_range", "value must be between 0.5 and 50") ==
+            R"({"error":"out_of_range","message":"value must be between 0.5 and 50"})",
+            "code plus message");
+    require(Security::errorBody("x", "say \"hi\"\n") == R"({"error":"x","message":"say \"hi\"\n"})",
+            "messages are escaped");
+}
+
 // ── Client error reports ──────────────────────────────────────────────────────
 
 static const char* ORIGIN = "https://simulation.micutu.com";
@@ -451,6 +461,7 @@ int main() {
     RUN(rounded_coordinates_share_cache_entries);
     RUN(ttl_cache_expires_and_stays_bounded);
     RUN(wind_direction_uses_meteorological_convention);
+    RUN(error_bodies_follow_the_contract);
     RUN(client_error_report_is_parsed_and_scrubbed);
     RUN(client_error_report_rejects_malformed_input);
     RUN(client_error_text_cannot_forge_log_lines);

@@ -79,16 +79,15 @@ void SeedController::seedWeather(
 
     auto j = req->jsonObject();
     if (!j) {
-        cb(Security::json("{\"error\":\"invalid json\"}", drogon::k400BadRequest));
+        cb(Security::error(drogon::k400BadRequest, "invalid_json"));
         return;
     }
     if (!(*j).isMember("lat") || !(*j).isMember("lon")) {
-        cb(Security::json("{\"error\":\"missing required fields: lat, lon\"}",
-                          drogon::k400BadRequest));
+        cb(Security::error(drogon::k400BadRequest, "missing_fields", "lat and lon are required"));
         return;
     }
     if (!(*j)["lat"].isNumeric() || !(*j)["lon"].isNumeric()) {
-        cb(Security::json("{\"error\":\"type mismatch\"}", drogon::k400BadRequest));
+        cb(Security::error(drogon::k400BadRequest, "invalid_type", "lat and lon must be numbers"));
         return;
     }
 
@@ -96,7 +95,7 @@ void SeedController::seedWeather(
     double lon = (*j)["lon"].asDouble();
     if (!Security::finiteInRange(lat, -90.0, 90.0) ||
         !Security::finiteInRange(lon, -180.0, 180.0)) {
-        cb(Security::json("{\"error\":\"bad coordinates\"}", drogon::k400BadRequest));
+        cb(Security::error(drogon::k400BadRequest, "lat_lon_out_of_range"));
         return;
     }
 
@@ -190,23 +189,22 @@ void SeedController::setSpeed(
 
     auto j = req->jsonObject();
     if (!j) {
-        cb(Security::json("{\"error\":\"invalid json\"}", drogon::k400BadRequest));
+        cb(Security::error(drogon::k400BadRequest, "invalid_json"));
         return;
     }
     if (!(*j).isMember("value")) {
-        cb(Security::json("{\"error\":\"missing required field: value\"}",
-                          drogon::k400BadRequest));
+        cb(Security::error(drogon::k400BadRequest, "missing_fields", "value is required"));
         return;
     }
     if (!(*j)["value"].isNumeric()) {
-        cb(Security::json("{\"error\":\"type mismatch\"}", drogon::k400BadRequest));
+        cb(Security::error(drogon::k400BadRequest, "invalid_type", "value must be a number"));
         return;
     }
 
     double value = (*j)["value"].asDouble();
     if (!Security::finiteInRange(value, 0.5, 50.0)) {
-        cb(Security::json("{\"error\":\"speed must be finite and between 0.5 and 50\"}",
-                          drogon::k400BadRequest));
+        cb(Security::error(drogon::k400BadRequest, "out_of_range",
+                           "value must be between 0.5 and 50"));
         return;
     }
 

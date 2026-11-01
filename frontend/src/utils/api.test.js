@@ -12,6 +12,6 @@ test('known backend error codes map to readable messages', () => {
 test('HTML rate-limit pages from nginx do not break error handling', async () => {
   const html = new Response('<html>503</html>', { status: 503, headers: { 'content-type': 'text/html' } })
   assert.match(await apiErrorMessage(html), /Server error/)
-  const json = new Response('{"error":"rate limited"}', { status: 429, headers: { 'content-type': 'application/json' } })
+  const json = new Response('{"error":"rate_limited"}', { status: 429, headers: { 'content-type': 'application/json' } })
   assert.match(await apiErrorMessage(json), /Too many changes/)
 })

@@ -10,8 +10,15 @@ const MESSAGES = {
   invalid_query: 'Use letters, spaces, commas or hyphens',
   invalid_lat_lon: 'Invalid coordinates',
   lat_lon_out_of_range: 'Coordinates out of range',
-  'rate limited': 'Too many changes right now — try again shortly',
-  'forbidden origin': 'Request blocked by the server',
+  out_of_range: 'That value is out of range',
+  invalid_json: 'The request was malformed',
+  invalid_type: 'The request was malformed',
+  missing_fields: 'The request was incomplete',
+  unknown_event_type: 'Unknown event type',
+  invalid_limit: 'Invalid history length',
+  rate_limited: 'Too many changes right now — try again shortly',
+  forbidden_origin: 'Request blocked by the server',
+  unsupported_media_type: 'Request blocked by the server',
   unauthorized: 'This action is restricted on this server',
 }
 

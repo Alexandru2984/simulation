@@ -205,6 +205,24 @@ inline drogon::HttpResponsePtr json(const std::string& body,
     return resp;
 }
 
+// The API error contract: {"error":"<snake_case code>"} plus, for validation
+// failures, a human-readable "message". Clients branch on the code only; the
+// message may change wording at any time.
+inline std::string errorBody(std::string_view code, std::string_view message = {}) {
+    Json::Value body(Json::objectValue);
+    body["error"] = std::string(code);
+    if (!message.empty()) body["message"] = std::string(message);
+    Json::StreamWriterBuilder builder;
+    builder["indentation"] = "";
+    return Json::writeString(builder, body);
+}
+
+inline drogon::HttpResponsePtr error(drogon::HttpStatusCode status, std::string_view code,
+                                     std::string_view message = {},
+                                     const std::string& methods = "GET, POST, OPTIONS") {
+    return json(errorBody(code, message), status, methods);
+}
+
 inline bool hasAllowedOrigin(const drogon::HttpRequestPtr& req) {
     const auto origin = req->getHeader("Origin");
     return origin.empty() || origin == allowedOrigin();
@@ -229,13 +247,13 @@ inline bool requireJsonPostAccess(
     const std::function<void(const drogon::HttpResponsePtr&)>& cb) {
     const auto origin = req->getHeader("Origin");
     if (!originAllowed(origin, allowedOrigin())) {
-        cb(json("{\"error\":\"forbidden origin\"}", drogon::k403Forbidden));
+        cb(error(drogon::k403Forbidden, "forbidden_origin"));
         return false;
     }
 
     if (!hasJsonContentType(req)) {
-        cb(json("{\"error\":\"content type must be application/json\"}",
-                drogon::k415UnsupportedMediaType));
+        cb(error(drogon::k415UnsupportedMediaType, "unsupported_media_type",
+                 "Content-Type must be application/json"));
         return false;
     }
 
@@ -251,13 +269,13 @@ inline bool requireMutationAccess(
     const auto& token = mutationToken();
     if (!token.empty() &&
         !constantTimeEquals(req->getHeader("X-Simulation-Token"), token)) {
-        cb(json("{\"error\":\"unauthorized\"}", drogon::k401Unauthorized));
+        cb(error(drogon::k401Unauthorized, "unauthorized"));
         return false;
     }
 
     // Global budget checked last so rejected junk doesn't drain tokens
     if (limiter && !limiter->allow()) {
-        cb(json("{\"error\":\"rate limited\"}", drogon::k429TooManyRequests));
+        cb(error(drogon::k429TooManyRequests, "rate_limited"));
         return false;
     }
 

@@ -19,7 +19,7 @@ drogon::HttpResponsePtr corsJson(const std::string& body,
 }
 
 drogon::HttpResponsePtr errorResp(const char* code, drogon::HttpStatusCode status) {
-    return corsJson(std::string("{\"error\":\"") + code + "\"}", status);
+    return corsJson(Security::errorBody(code), status);
 }
 
 // Maps a gateway outcome to the public error contract.

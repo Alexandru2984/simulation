@@ -119,7 +119,7 @@ static drogon::HttpResponsePtr jsonError(drogon::HttpStatusCode code) {
     auto resp = drogon::HttpResponse::newHttpResponse();
     resp->setStatusCode(code);
     resp->setContentTypeCode(drogon::CT_APPLICATION_JSON);
-    resp->setBody(std::string(R"({"error":")") + frameworkErrorCode(code) + "\"}");
+    resp->setBody(Security::errorBody(frameworkErrorCode(code)));
     return resp;
 }
 

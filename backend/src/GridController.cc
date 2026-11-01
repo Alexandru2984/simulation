@@ -79,13 +79,16 @@ void GridRestController::inject(
     if (!Security::requireMutationAccess(req, cb, &injectLimiter)) return;
 
     auto j = req->jsonObject();
-    if (!j) { cb(jsonResp("{\"error\":\"invalid json\"}", drogon::k400BadRequest)); return; }
+    if (!j) { cb(Security::error(drogon::k400BadRequest, "invalid_json")); return; }
 
     if (!(*j).isMember("lat") || !(*j).isMember("lon") || !(*j).isMember("type")) {
-        cb(jsonResp("{\"error\":\"missing required fields: lat, lon, type\"}", drogon::k400BadRequest)); return;
+        cb(Security::error(drogon::k400BadRequest, "missing_fields", "lat, lon and type are required"));
+        return;
     }
     if (!(*j)["lat"].isNumeric() || !(*j)["lon"].isNumeric() || !(*j)["type"].isString()) {
-        cb(jsonResp("{\"error\":\"type mismatch\"}", drogon::k400BadRequest)); return;
+        cb(Security::error(drogon::k400BadRequest, "invalid_type",
+                           "lat and lon must be numbers, type a string"));
+        return;
     }
 
     float lat = (*j)["lat"].asFloat();
@@ -95,16 +98,15 @@ void GridRestController::inject(
                       ? (*j)["intensity"].asFloat() : 1.0f;
 
     if ((*j).isMember("intensity") && !(*j)["intensity"].isNumeric()) {
-        cb(jsonResp("{\"error\":\"intensity must be numeric\"}",
-                    drogon::k400BadRequest));
+        cb(Security::error(drogon::k400BadRequest, "invalid_type", "intensity must be a number"));
         return;
     }
 
     if (!Security::finiteInRange(lat, -90.0, 90.0) ||
         !Security::finiteInRange(lon, -180.0, 180.0) ||
         !Security::finiteInRange(intensity, 0.1, 3.0)) {
-        cb(jsonResp("{\"error\":\"coordinates or intensity out of range\"}",
-                    drogon::k400BadRequest));
+        cb(Security::error(drogon::k400BadRequest, "out_of_range",
+                           "lat -90..90, lon -180..180, intensity 0.1..3"));
         return;
     }
 
@@ -121,7 +123,8 @@ void GridRestController::inject(
     for (const auto& known : KNOWN)
         if (typeStr == known.id) { match = &known; break; }
     if (!match) {
-        cb(jsonResp("{\"error\":\"unknown type\"}", drogon::k400BadRequest));
+        cb(Security::error(drogon::k400BadRequest, "unknown_event_type",
+                           "type is one of cyclone, heat_dome, cold_outbreak, blocking_high, tornado"));
         return;
     }
 
@@ -213,19 +216,19 @@ void GridRestController::forecast(
     int steps = 100;  // default: 100 steps → 10 snapshots
     auto j = req->jsonObject();
     if (!j) {
-        cb(jsonResp("{\"error\":\"invalid json\"}", drogon::k400BadRequest));
+        cb(Security::error(drogon::k400BadRequest, "invalid_json"));
         return;
     }
     if ((*j).isMember("steps")) {
         if (!(*j)["steps"].isInt()) {
-            cb(jsonResp("{\"error\":\"type mismatch\"}", drogon::k400BadRequest));
+            cb(Security::error(drogon::k400BadRequest, "invalid_type", "steps must be an integer"));
             return;
         }
         steps = std::max(1, std::min(200, (*j)["steps"].asInt()));
     }
     static RateLimiter forecastLimiter(30.0, 5.0);
     if (!forecastLimiter.allow()) {
-        cb(jsonResp("{\"error\":\"rate limited\"}", drogon::k429TooManyRequests));
+        cb(Security::error(drogon::k429TooManyRequests, "rate_limited"));
         return;
     }
     cb(jsonResp(GridSim::instance().getForecast(steps)));
@@ -239,14 +242,14 @@ void GridRestController::getHistory(
     const auto limitStr = req->getParameter("limit");
     if (!limitStr.empty()) {
         if (!Security::parseIntInRange(limitStr, 1, 120, limit)) {
-            cb(jsonResp("{\"error\":\"limit must be an integer from 1 to 120\"}",
-                        drogon::k400BadRequest));
+            cb(Security::error(drogon::k400BadRequest, "invalid_limit",
+                               "limit must be an integer from 1 to 120"));
             return;
         }
     }
     static RateLimiter historyLimiter(30.0, 10.0);
     if (!historyLimiter.allow()) {
-        cb(jsonResp("{\"error\":\"rate limited\"}", drogon::k429TooManyRequests));
+        cb(Security::error(drogon::k429TooManyRequests, "rate_limited"));
         return;
     }
     cb(jsonResp(GridSim::instance().getHistory(limit)));
@@ -257,7 +260,7 @@ void GridRestController::getMetrics(
     std::function<void(const drogon::HttpResponsePtr&)>&& cb) const
 {
     if (!Security::isDirectLocalRequest(req)) {
-        cb(jsonResp("{\"error\":\"not_found\"}", drogon::k404NotFound));
+        cb(Security::error(drogon::k404NotFound, "not_found"));
         return;
     }
     auto& sim = GridSim::instance();

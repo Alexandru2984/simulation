@@ -42,7 +42,7 @@ void HealthController::version(
 {
     // Operator-only, like /api/metrics: refused when it came through nginx.
     if (!Security::isDirectLocalRequest(req)) {
-        cb(Security::json("{\"error\":\"not_found\"}", drogon::k404NotFound, "GET, OPTIONS"));
+        cb(Security::error(drogon::k404NotFound, "not_found", {}, "GET, OPTIONS"));
         return;
     }
     char body[256];

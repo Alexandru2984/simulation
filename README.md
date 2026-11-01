@@ -234,11 +234,25 @@ refuses output larger than the grid.
 
 ### Errors
 
-Errors are JSON: `{"error": "..."}`. The OpenWeather-backed endpoints and
-framework-level failures use stable snake_case codes: `invalid_query`,
-`invalid_lat_lon`, `lat_lon_out_of_range`, `upstream_rate_limited`,
-`upstream_failed`, `not_found`, `method_not_allowed`, `payload_too_large`, and
-so on. Responses never include the framework name or version.
+Every error, from the backend or from nginx's rate limiter, is JSON with a
+stable snake_case code; validation failures add a readable `message`:
+
+```json
+{ "error": "out_of_range", "message": "value must be between 0.5 and 50" }
+```
+
+Clients branch on `error` only; `message` wording may change.
+
+| Status | Codes |
+|---|---|
+| `400` | `invalid_json`, `missing_fields`, `invalid_type`, `out_of_range`, `unknown_event_type`, `invalid_limit`, `invalid_query`, `invalid_lat_lon`, `lat_lon_out_of_range`, `invalid_report`, `bad_request` |
+| `401` / `403` | `unauthorized`, `forbidden_origin`, `forbidden` |
+| `404` / `405` | `not_found`, `method_not_allowed` |
+| `413` / `414` / `415` / `431` | `payload_too_large`, `uri_too_long`, `unsupported_media_type`, `headers_too_large` |
+| `429` | `rate_limited` (nginx adds `Retry-After: 10`), `upstream_rate_limited` |
+| `502` / `503` | `upstream_failed`, `upstream_response_too_large`, `upstream_invalid_payload`, `api_key_not_configured` |
+
+Responses never include the framework name or version.
 
 ### Event Types (POST `/api/grid/inject`)
 ```json

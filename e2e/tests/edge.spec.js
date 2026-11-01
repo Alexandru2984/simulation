@@ -131,6 +131,33 @@ test('mutations require the site origin and a JSON body', async ({ request, base
   })).status()).toBe(200)
 })
 
+test('rate-limited API calls get the JSON error contract', async ({ request }) => {
+  // More parallel requests than the per-IP burst allows (rates are raised for
+  // tests, bursts are not).
+  const responses = await Promise.all(Array.from({ length: 150 }, () => request.get('/api/weather/locations')))
+  const limited = responses.filter(res => res.status() === 429)
+  expect(limited.length).toBeGreaterThan(0)
+  for (const res of limited.slice(0, 5)) {
+    expect(res.headers()['content-type']).toContain('application/json')
+    expect(res.headers()['retry-after']).toBe('10')
+    expect(res.headers()['x-content-type-options']).toBe('nosniff')
+    expect(await res.json()).toEqual({ error: 'rate_limited' })
+  }
+})
+
+test('validation errors carry a stable code and a readable message', async ({ request, baseURL }) => {
+  const origin = new URL(baseURL).origin
+  const outOfRange = await request.post('/api/weather/speed', { headers: { Origin: origin }, data: { value: 0 } })
+  expect(outOfRange.status()).toBe(400)
+  expect(await outOfRange.json()).toEqual({ error: 'out_of_range', message: 'value must be between 0.5 and 50' })
+  const unknown = await request.post('/api/grid/inject', {
+    headers: { Origin: origin }, data: { lat: 1, lon: 1, type: 'meteor' },
+  })
+  expect((await unknown.json()).error).toBe('unknown_event_type')
+  const foreign = await request.post('/api/weather/speed', { headers: { Origin: 'https://evil.example' }, data: { value: 1 } })
+  expect(await foreign.json()).toEqual({ error: 'forbidden_origin' })
+})
+
 test('city search rejects junk and proxies real queries', async ({ request }) => {
   expect((await request.get('/api/weather/search?q=')).status()).toBe(400)
   const res = await request.get('/api/weather/search?q=bucuresti')
