@@ -2,6 +2,10 @@ import { useRef, useMemo } from 'react'
 import { useLoader, useFrame } from '@react-three/fiber'
 import { TextureLoader } from 'three'
 import * as THREE from 'three'
+import { sunDirection, vec3ToLatLon } from '../utils/geoUtils'
+
+// Pointer travel (px) above which a press is a drag of the globe, not a click.
+const CLICK_SLOP = 6
 
 const vertexShader = `
   varying vec2 vUv;
@@ -75,38 +79,22 @@ export default function EarthGlobe({ temperature = 20, simTime = 0, onGlobeClick
     const mat = meshRef.current.material
     mat.uniforms.temperature.value = tempRef.current
 
-    // Real-time sun position from UTC wall clock — shows actual day/night on Earth
-    const now = new Date()
-    const utcSec = now.getUTCHours() * 3600 + now.getUTCMinutes() * 60 + now.getUTCSeconds()
-    const startOfYear = Date.UTC(now.getUTCFullYear(), 0, 0)
-    const dayOfYear   = Math.floor((now.getTime() - startOfYear) / 86400000)
-
-    // Solar declination: ±23.44° over the year (peaks at solstices)
-    const decl = 23.44 * (Math.PI / 180) * Math.sin((2 * Math.PI * (284 + dayOfYear)) / 365)
-
-    // Hour angle: sun is over Greenwich (lon 0°) at UTC 12:00
-    const hourAngle = ((utcSec / 86400) - 0.5) * 2 * Math.PI
-
-    mat.uniforms.sunDir.value.set(
-      Math.cos(decl) * Math.cos(-hourAngle),
-      Math.sin(decl),
-      Math.cos(decl) * Math.sin(-hourAngle)
-    )
+    // Real-time sun position from the UTC wall clock: actual day/night.
+    const sun = sunDirection()
+    mat.uniforms.sunDir.value.set(sun.x, sun.y, sun.z)
   })
 
   const handleClick = (e) => {
     e.stopPropagation()
-    const p = e.point.clone().normalize()
-    const lat = Math.asin(p.y) * (180 / Math.PI)
-    const lon = Math.atan2(p.z, -p.x) * (180 / Math.PI) - 180
+    if (e.delta > CLICK_SLOP) return   // finished rotating the globe
+    const { lat, lon } = vec3ToLatLon(e.point.x, e.point.y, e.point.z)
     onGlobeClick?.(lat, lon)
   }
 
   const handleHover = (e) => {
     e.stopPropagation()
-    const p = e.point.clone().normalize()
-    const lat = Math.asin(p.y) * (180 / Math.PI)
-    const lon = Math.atan2(p.z, -p.x) * (180 / Math.PI) - 180
+    if (e.pointerType === 'touch') return
+    const { lat, lon } = vec3ToLatLon(e.point.x, e.point.y, e.point.z)
     onGlobeHover?.({ lat, lon, clientX: e.clientX, clientY: e.clientY })
   }
 

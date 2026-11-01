@@ -1,77 +1,109 @@
-import { useRef, useMemo, useEffect } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useLoader } from '@react-three/fiber'
 import { TextureLoader } from 'three'
 import * as THREE from 'three'
+import { sunDirection } from '../utils/geoUtils'
 
 const cloudVertexShader = `
   varying vec2 vUv;
+  varying vec3 vNormal;
   void main() {
     vUv = uv;
+    vNormal = normalize(normal);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `
+// The cloud pattern scrolls with the westerlies while the density mask stays
+// pinned to the simulation grid, so cloud cover always sits over humid/rainy
+// cells. (Rotating the whole mesh used to drift the mask off the grid.)
 const cloudFragmentShader = `
   uniform sampler2D cloudTex;
   uniform sampler2D densityTex;
   uniform float cloudOpacity;
+  uniform float scroll;
+  uniform vec3 sunDir;
   varying vec2 vUv;
+  varying vec3 vNormal;
   void main() {
-    vec4 cloud = texture2D(cloudTex, vUv);
+    vec4 cloud = texture2D(cloudTex, vec2(vUv.x + scroll, vUv.y));
     float density = texture2D(densityTex, vUv).r;
-    float pattern = max(cloud.a, dot(cloud.rgb, vec3(0.299, 0.587, 0.114)));
+    // The texture is white with an alpha mask; opaque grayscale images fall
+    // back to luminance. (max(alpha, luminance) made every white texel fully
+    // opaque, turning thin cloud into solid white blocks.)
+    float lum = dot(cloud.rgb, vec3(0.299, 0.587, 0.114));
+    float pattern = cloud.a < 0.99 ? cloud.a : lum;
     float alpha = pattern * clamp(density, 0.0, 1.0) * cloudOpacity;
-    gl_FragColor = vec4(cloud.rgb + vec3(1.0 - cloud.r) * 0.1, alpha);
+    // Clouds share the Earth's day/night terminator.
+    float day = smoothstep(-0.15, 0.35, dot(normalize(vNormal), normalize(sunDir)));
+    gl_FragColor = vec4(vec3(0.97) * (0.1 + 0.9 * day), alpha);
   }
 `
 
-export default function CloudLayer({ windDirection = 0, windSpeed = 3, gridData }) {
+export default function CloudLayer({ gridData, animate = true }) {
   const meshRef = useRef()
   const cloudTex = useLoader(TextureLoader, '/textures/clouds.png')
-
-  // Per-cell density data texture (filled from H[] + R[])
-  const densityData = useMemo(() => new Float32Array(72 * 36), [])
-  const densityTex = useMemo(() => {
-    const t = new THREE.DataTexture(densityData, 72, 36, THREE.RedFormat, THREE.FloatType)
-    t.minFilter = t.magFilter = THREE.LinearFilter
-    t.needsUpdate = true
-    return t
-  }, [densityData])
+  const rows = gridData?.rows || 36
+  const cols = gridData?.cols || 72
 
   useEffect(() => {
-    if (!gridData) return
-    const { H, R, rows = 36, cols = 72 } = gridData
+    cloudTex.wrapS = THREE.RepeatWrapping
+    cloudTex.needsUpdate = true
+  }, [cloudTex])
+
+  // 8-bit red texture: linear filtering of float textures is optional in
+  // WebGL and missing on many phones, which used to blank the clouds there.
+  const { densityData, densityTex } = useMemo(() => {
+    const pixels = new Uint8Array(rows * cols)
+    const tex = new THREE.DataTexture(pixels, cols, rows, THREE.RedFormat, THREE.UnsignedByteType)
+    tex.minFilter = tex.magFilter = THREE.LinearFilter
+    tex.wrapS = THREE.RepeatWrapping
+    tex.wrapT = THREE.ClampToEdgeWrapping
+    tex.unpackAlignment = 1
+    tex.needsUpdate = true
+    return { densityData: pixels, densityTex: tex }
+  }, [rows, cols])
+
+  useEffect(() => () => densityTex.dispose(), [densityTex])
+
+  useEffect(() => {
+    const H = gridData?.H
+    const R = gridData?.R
     if (!H || !R) return
-    const n = rows * cols
-    for (let i = 0; i < n && i < densityData.length; i++) {
-      densityData[i] = Math.min(1, Math.max(0, (H[i] || 0) * 0.8 + (R[i] || 0) * 0.5))
+    const n = Math.min(densityData.length, H.length, R.length)
+    for (let i = 0; i < n; i++) {
+      const d = (H[i] || 0) * 0.8 + (R[i] || 0) * 0.5
+      densityData[i] = Math.round(Math.min(1, Math.max(0, d)) * 255)
     }
     densityTex.needsUpdate = true
   }, [gridData, densityData, densityTex])
 
   const uniforms = useMemo(() => ({
-    cloudTex:    { value: cloudTex },
-    densityTex:  { value: densityTex },
-    cloudOpacity: { value: 0.75 },
+    cloudTex: { value: cloudTex },
+    densityTex: { value: densityTex },
+    cloudOpacity: { value: 0.8 },
+    scroll: { value: 0 },
+    sunDir: { value: new THREE.Vector3(1, 0, 0) },
   }), [cloudTex, densityTex])
 
+  const avgWind = gridData?.avgWind ?? 6
   useFrame((_, delta) => {
-    if (!meshRef.current) return
-    const speed = (windSpeed / 20) * delta * 0.12
-    meshRef.current.rotation.y += Math.cos(windDirection * Math.PI / 180) * speed
-    meshRef.current.rotation.x += Math.sin(windDirection * Math.PI / 180) * speed * 0.1
+    const sun = sunDirection()
+    uniforms.sunDir.value.set(sun.x, sun.y, sun.z)
+    if (!animate) return
+    // Slow eastward drift, a little faster when the model is windier.
+    const u = uniforms.scroll
+    u.value = (u.value - delta * 0.0012 * (0.5 + avgWind / 12)) % 1
   })
 
   return (
     <mesh ref={meshRef}>
-      <sphereGeometry args={[2.04, 48, 48]} />
+      <sphereGeometry args={[2.04, 64, 48]} />
       <shaderMaterial
         vertexShader={cloudVertexShader}
         fragmentShader={cloudFragmentShader}
         uniforms={uniforms}
         transparent
         depthWrite={false}
-        side={THREE.FrontSide}
-        blending={THREE.NormalBlending}
       />
     </mesh>
   )

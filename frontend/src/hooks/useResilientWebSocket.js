@@ -6,7 +6,10 @@ function websocketUrl(path) {
   return `${protocol}://${window.location.host}${path}`
 }
 
-export function useResilientWebSocket(path) {
+const parseJson = raw => JSON.parse(raw)
+
+// `decode` turns one frame into state, or returns null to ignore it.
+export function useResilientWebSocket(path, { decode = parseJson, binary = false } = {}) {
   const [data, setData] = useState(null)
   const [status, setStatus] = useState('connecting')
 
@@ -15,8 +18,16 @@ export function useResilientWebSocket(path) {
     const manager = createWebSocketManager({
       url: websocketUrl(path),
       onStatus: setStatus,
+      createSocket: url => {
+        const socket = new WebSocket(url)
+        if (binary) socket.binaryType = 'arraybuffer'
+        return socket
+      },
       onMessage: raw => {
-        try { setData(JSON.parse(raw)) } catch {
+        try {
+          const value = decode(raw)
+          if (value) setData(value)
+        } catch {
           // Ignore malformed application frames; the stale watchdog still
           // verifies whether the transport remains alive.
         }
@@ -24,7 +35,7 @@ export function useResilientWebSocket(path) {
     })
     manager.start()
     return () => manager.stop()
-  }, [path])
+  }, [path, decode, binary])
 
   return { data, status }
 }

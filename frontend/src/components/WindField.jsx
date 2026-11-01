@@ -1,101 +1,89 @@
-// WindField — renders animated wind arrows at each 36×72 grid point
-import { useRef, useMemo, useEffect } from 'react'
+// WindField — one arrow per grid cell, lying in the local tangent plane and
+// pointing downwind. Arrow length and colour grow with wind speed; columns are
+// thinned towards the poles so the arrows don't pile up there.
+import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
+import { eastVec, latLonToVec3, northVec } from '../utils/geoUtils'
 
-const ROWS = 36, COLS = 72
-const COUNT = ROWS * COLS
+const RADIUS = 2.06
+const SLOW = new THREE.Color('#38bdf8')
+const FAST = new THREE.Color('#fde047')
 
-// Convert grid lat/lon to 3D position on sphere surface
-function latLonToVec3(lat, lon, r) {
-  const latR = (lat * Math.PI) / 180
-  const lonR = ((lon + 180) * Math.PI) / 180
-  return new THREE.Vector3(
-    -r * Math.cos(latR) * Math.cos(lonR),
-     r * Math.sin(latR),
-     r * Math.cos(latR) * Math.sin(lonR)
-  )
-}
-
-// Arrow geometry: thin box shaft + cone head, pointing in +Y at rest
+// Shaft + head pointing along +Y, centred near the cell centre.
 function makeArrowGeometry() {
-  const shaftGeo  = new THREE.CylinderGeometry(0.003, 0.003, 0.06, 4)
-  shaftGeo.translate(0, 0.01, 0)
-  const headGeo   = new THREE.ConeGeometry(0.008, 0.03, 4)
-  headGeo.translate(0, 0.055, 0)
-
-  const merged = new THREE.BufferGeometry()
+  const shaft = new THREE.CylinderGeometry(0.004, 0.004, 0.06, 4)
+  shaft.translate(0, -0.005, 0)
+  const head = new THREE.ConeGeometry(0.012, 0.03, 4)
+  head.translate(0, 0.04, 0)
   const positions = []
-  const addGeo = (geo) => {
+  for (const part of [shaft, head]) {
+    const geo = part.toNonIndexed()
     const pos = geo.attributes.position
-    for (let i = 0; i < pos.count; i++) {
-      positions.push(pos.getX(i), pos.getY(i), pos.getZ(i))
-    }
+    for (let i = 0; i < pos.count; i++) positions.push(pos.getX(i), pos.getY(i), pos.getZ(i))
+    geo.dispose()
+    part.dispose()
   }
-  addGeo(shaftGeo)
-  addGeo(headGeo)
-
+  const merged = new THREE.BufferGeometry()
   merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  merged.computeVertexNormals()
   return merged
 }
 
 export default function WindField({ gridData }) {
   const meshRef = useRef()
+  const rows = gridData?.rows || 36
+  const cols = gridData?.cols || 72
+  const count = rows * cols
 
   const geometry = useMemo(() => makeArrowGeometry(), [])
   const material = useMemo(() => new THREE.MeshBasicMaterial({
-    color: 0x38bdf8,
-    transparent: true,
-    opacity: 0.55,
+    color: 0xffffff, transparent: true, opacity: 0.8, toneMapped: false,
+  }), [])
+  useEffect(() => () => { geometry.dispose(); material.dispose() }, [geometry, material])
+
+  const scratch = useMemo(() => ({
+    dummy: new THREE.Object3D(),
+    up: new THREE.Vector3(0, 1, 0),
+    dir: new THREE.Vector3(),
+    color: new THREE.Color(),
   }), [])
 
-  // Reusable objects for per-frame matrix updates
-  const dummy    = useMemo(() => new THREE.Object3D(), [])
-  const up       = useMemo(() => new THREE.Vector3(0, 1, 0), [])
-  const quat     = useMemo(() => new THREE.Quaternion(), [])
   useEffect(() => {
-    if (!gridData || !meshRef.current) return
-    const { U, V } = gridData
-    const R = 2.06   // slightly above globe
+    const mesh = meshRef.current
+    const U = gridData?.U
+    const V = gridData?.V
+    if (!mesh || !U || !V) return
+    const { dummy, up, dir, color } = scratch
 
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const i = r * COLS + c
-        const lat = -87.5 + r * 5
-        const lon = -177.5 + c * 5
+    for (let r = 0; r < rows; r++) {
+      const lat = -90 + (r + 0.5) * (180 / rows)
+      const stride = Math.max(1, Math.round(1 / Math.cos(lat * Math.PI / 180)))
+      for (let c = 0; c < cols; c++) {
+        const i = r * cols + c
+        const lon = -180 + (c + 0.5) * (360 / cols)
+        const u = U[i] || 0
+        const v = V[i] || 0
+        const speed = Math.hypot(u, v)
 
-        const pos  = latLonToVec3(lat, lon, R)
-        const u    = U[i], v = V[i]
-        const spd  = Math.sqrt(u * u + v * v)
-
-        // Scale: visible at 1 m/s, max at ~30 m/s
-        const scale = Math.min(1.0, spd / 20) + 0.05
-
-        dummy.position.copy(pos)
-        dummy.scale.setScalar(scale)
-
-        // Orient: point radially outward first, then rotate for wind direction
-        const radial = pos.clone().normalize()
-        dummy.quaternion.setFromUnitVectors(up, radial)
-
-        if (spd > 0.5) {
-          // Wind direction in local tangent plane
-          // U = eastward, V = northward  → rotate around radial axis
-          const angle = Math.atan2(u, v)  // bearing from north
-          quat.setFromAxisAngle(radial, angle)
-          dummy.quaternion.premultiply(quat)
+        if (c % stride !== 0 || speed < 0.3) {
+          dummy.scale.setScalar(0)
+        } else {
+          const e = eastVec(lon)
+          const n = northVec(lat, lon)
+          dir.set(e.x * u + n.x * v, e.y * u + n.y * v, e.z * u + n.z * v).normalize()
+          dummy.quaternion.setFromUnitVectors(up, dir)
+          dummy.scale.setScalar(0.45 + Math.min(1, speed / 20) * 0.85)
         }
-
+        const p = latLonToVec3(lat, lon, RADIUS)
+        dummy.position.set(p.x, p.y, p.z)
         dummy.updateMatrix()
-        meshRef.current.setMatrixAt(i, dummy.matrix)
+        mesh.setMatrixAt(i, dummy.matrix)
+        mesh.setColorAt(i, color.copy(SLOW).lerp(FAST, Math.min(1, speed / 25)))
       }
     }
-    meshRef.current.instanceMatrix.needsUpdate = true
-  }, [gridData, dummy, up, quat])
+    mesh.instanceMatrix.needsUpdate = true
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+  }, [gridData, rows, cols, scratch])
 
   if (!gridData) return null
-
-  return (
-    <instancedMesh ref={meshRef} args={[geometry, material, COUNT]} />
-  )
+  return <instancedMesh key={count} ref={meshRef} args={[geometry, material, count]} frustumCulled={false} />
 }

@@ -1,49 +1,21 @@
-import { Html } from '@react-three/drei'
-import { latLonToVec3, GLOBE_RADIUS } from '../utils/geoUtils'
+import GlobeLabel from './GlobeLabel'
 import { pressureAnomalyLabel } from '../utils/weatherFeatures'
+import { formatWind } from '../utils/units'
 
-export default function StormLabels({ storms = [] }) {
-  if (!storms || storms.length === 0) return null
-
-  return (
-    <>
-      {storms.slice(0, 8).map((storm) => {
-        const pos = latLonToVec3(storm.lat, storm.lon, GLOBE_RADIUS + 0.05)
-        const key = `${storm.lat.toFixed(1)}_${storm.lon.toFixed(1)}`
-
-        return (
-          <Html
-            key={key}
-            position={[pos.x, pos.y, pos.z]}
-            distanceFactor={5}
-            occlude
-            style={{ pointerEvents: 'none' }}
-          >
-            <div style={{
-              background: '#0f172add',
-              border: '1px solid #a855f7',
-              borderRadius: 8,
-              padding: '4px 8px',
-              color: '#e2e8f0',
-              fontSize: '0.68rem',
-              whiteSpace: 'nowrap',
-              backdropFilter: 'blur(8px)',
-              display: 'flex', alignItems: 'center', gap: 4,
-              boxShadow: '0 2px 12px #a855f744',
-            }}>
-              <span style={{ fontSize: '0.9rem' }}>🌀</span>
-              <div>
-                <div style={{ fontWeight: 700, color: '#a855f7', lineHeight: 1.2 }}>
-                  {pressureAnomalyLabel(storm.anom)}
-                </div>
-                <div style={{ color: '#475569' }}>
-                  {storm.P?.toFixed(0)} hPa · {storm.wind?.toFixed(0)} m/s
-                </div>
-              </div>
-            </div>
-          </Html>
-        )
-      })}
-    </>
-  )
+export default function StormLabels({ registry, storms = [], windUnit = 'ms' }) {
+  if (!storms?.length) return null
+  // Deepest lows first; only label the eight most significant.
+  const top = [...storms].sort((a, b) => (a.anom ?? 0) - (b.anom ?? 0)).slice(0, 8)
+  return top.map(storm => {
+    const id = `storm:${storm.lat.toFixed(1)}_${storm.lon.toFixed(1)}`
+    return (
+      <GlobeLabel key={id} id={id} registry={registry} lat={storm.lat} lon={storm.lon} className="storm-label">
+        <span aria-hidden="true">🌀</span>
+        <span>
+          <strong>{pressureAnomalyLabel(storm.anom)}</strong>
+          <small>{Number.isFinite(storm.P) ? `${storm.P.toFixed(0)} hPa` : '—'} · {formatWind(storm.wind, windUnit, 0)}</small>
+        </span>
+      </GlobeLabel>
+    )
+  })
 }

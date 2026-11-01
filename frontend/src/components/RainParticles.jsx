@@ -50,14 +50,15 @@ function sampleUV(lat, lon, U, V, rows, cols) {
   return { u: U[idx] || 0, v: V[idx] || 0 }
 }
 
-export default function RainParticles({ gridData }) {
+export default function RainParticles({ gridData, maxParticles = N_RAIN }) {
   const pointsRef = useRef()
   const geoRef    = useRef()
 
   const fps = useFPS()
-  const particleBudget = particleBudgetForFps(fps)
-  const budgetRef = useRef(8192)
-  budgetRef.current = particleBudget
+  const budgetRef = useRef(N_RAIN)
+  useEffect(() => {
+    budgetRef.current = Math.max(0, Math.min(N_RAIN, maxParticles, particleBudgetForFps(fps)))
+  }, [fps, maxParticles])
 
   // Per-particle state
   const lats   = useRef(new Float32Array(N_RAIN))
@@ -98,22 +99,21 @@ export default function RainParticles({ gridData }) {
 
   useFrame((_, delta) => {
     if (!pointsRef.current) return
-    const posAttr = pointsRef.current.geometry.attributes.position
+    const geometry = pointsRef.current.geometry
+    const posAttr = geometry.attributes.position
     const budget = budgetRef.current
-    pointsRef.current.geometry.setDrawRange(0, budget)
     const spd = 0.012 * delta * 60
     const windScale = 0.00004 * delta * 60
     const c = cumulRef.current
     const g = gridRef.current
     const hasRain = c && c.totalR > 0
 
+    // No rain anywhere: draw nothing instead of rewriting every vertex.
     if (!hasRain) {
-      for (let i = 0; i < budget; i++) {
-        posAttr.array[i*3] = posAttr.array[i*3+1] = posAttr.array[i*3+2] = 9999
-      }
-      posAttr.needsUpdate = true
+      geometry.setDrawRange(0, 0)
       return
     }
+    geometry.setDrawRange(0, budget)
 
     for (let i = 0; i < budget; i++) {
       radii.current[i] -= spd

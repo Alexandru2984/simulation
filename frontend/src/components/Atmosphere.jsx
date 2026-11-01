@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
 
 const vertexShader = `
@@ -27,14 +27,15 @@ const fragmentShader = `
 `
 
 export default function Atmosphere({ temperature = 20 }) {
-  const ref = useRef()
+  const uniforms = useMemo(() => ({ temperature: { value: 20 } }), [])
+  useEffect(() => { uniforms.temperature.value = temperature }, [uniforms, temperature])
   return (
-    <mesh ref={ref} scale={[1.06, 1.06, 1.06]}>
+    <mesh scale={[1.06, 1.06, 1.06]}>
       <sphereGeometry args={[2, 64, 64]} />
       <shaderMaterial
         vertexShader={vertexShader}
         fragmentShader={fragmentShader}
-        uniforms={{ temperature: { value: temperature } }}
+        uniforms={uniforms}
         side={THREE.FrontSide}
         blending={THREE.AdditiveBlending}
         transparent

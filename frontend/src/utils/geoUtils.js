@@ -14,10 +14,21 @@ export function latLonToVec3(lat, lon, r = GLOBE_RADIUS) {
   }
 }
 
-export function vec3ToLatLon(x, y, z, r = GLOBE_RADIUS) {
-  const lat = Math.asin(y / r) * 180 / Math.PI
-  const lon = Math.atan2(z, -x) * 180 / Math.PI - 180
+// Wraps any longitude into [-180, 180).
+export function normalizeLon(lon) {
+  return ((((lon + 180) % 360) + 360) % 360) - 180
+}
+
+export function vec3ToLatLon(x, y, z, r = Math.hypot(x, y, z) || GLOBE_RADIUS) {
+  const lat = Math.asin(Math.max(-1, Math.min(1, y / r))) * 180 / Math.PI
+  const lon = normalizeLon(Math.atan2(z, -x) * 180 / Math.PI - 180)
   return { lat, lon }
+}
+
+// A surface point is visible when it faces the camera: (cam - p) · p > 0.
+export function facesCamera(point, camera) {
+  const p2 = point.x * point.x + point.y * point.y + point.z * point.z
+  return camera.x * point.x + camera.y * point.y + camera.z * point.z > p2
 }
 
 // Grid geometry: rows 0-35 → lat -87.5…+87.5 (step 5°), cols 0-71 → lon -177.5…+177.5 (step 5°)
@@ -65,5 +76,21 @@ export function northVec(lat, lon) {
     x:  Math.sin(latR) * Math.cos(lonR),
     y:  Math.cos(latR),
     z: -Math.sin(latR) * Math.sin(lonR),
+  }
+}
+
+// Unit vector towards the sun in globe space for a given instant. Lon 0° is
+// +X and lon −90° is +Z (see latLonToVec3); the sub-solar point sits over
+// lon −15°·(UTC hours − 12) at the solar declination.
+export function sunDirection(date = new Date()) {
+  const utcSec = date.getUTCHours() * 3600 + date.getUTCMinutes() * 60 + date.getUTCSeconds()
+  const startOfYear = Date.UTC(date.getUTCFullYear(), 0, 0)
+  const dayOfYear = Math.floor((date.getTime() - startOfYear) / 86400000)
+  const decl = 23.44 * (Math.PI / 180) * Math.sin((2 * Math.PI * (284 + dayOfYear)) / 365)
+  const hourAngle = (utcSec / 86400 - 0.5) * 2 * Math.PI
+  return {
+    x: Math.cos(decl) * Math.cos(hourAngle),
+    y: Math.sin(decl),
+    z: Math.cos(decl) * Math.sin(hourAngle),
   }
 }

@@ -1,6 +1,6 @@
-import { Suspense, useRef, useEffect, useState, useCallback } from 'react'
-import { Canvas, useThree, useFrame } from '@react-three/fiber'
-import { OrbitControls, Stars, Html } from '@react-three/drei'
+import { Suspense, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { OrbitControls, Stars } from '@react-three/drei'
 import * as THREE from 'three'
 import EarthGlobe from './EarthGlobe'
 import CloudLayer from './CloudLayer'
@@ -14,310 +14,380 @@ import FrontalLayer from './FrontalLayer'
 import CountryBorders from './CountryBorders'
 import IsobarLines from './IsobarLines'
 import LightningEffect from './LightningEffect'
-import { sampleGrid } from '../utils/geoUtils'
+import GlobeLabel, { LabelProjector } from './GlobeLabel'
+import { latLonToVec3, sampleGrid, vec3ToLatLon } from '../utils/geoUtils'
+import {
+  compassPoint, formatLatLon, formatPercent, formatPressure, formatTemperature, formatWind,
+  windFromComponents,
+} from '../utils/units'
 
-function latLonToVec3(lat, lon, r = 4.5) {
-  const latRad = (lat * Math.PI) / 180
-  const lonRad = ((lon + 180) * Math.PI) / 180
-  return new THREE.Vector3(
-    -r * Math.cos(latRad) * Math.cos(lonRad),
-     r * Math.sin(latRad),
-     r * Math.cos(latRad) * Math.sin(lonRad)
-  )
+const MIN_DISTANCE = 2.6
+const MAX_DISTANCE = 9
+const FOCUS_DISTANCE = 4.2
+const HOME_DISTANCE = 4.8
+const IDLE_BEFORE_ROTATE_MS = 12_000
+const TOUR_INTERVAL_MS = 8_000
+
+// Quality presets: device pixel ratio, particle caps and star count.
+function qualityProfile(quality, layout) {
+  if (quality === 'low') return { dpr: [1, 1], particles: 1024, stars: 1500, antialias: false }
+  if (quality === 'high') return { dpr: [1, 2], particles: 8192, stars: 7000, antialias: true }
+  return layout === 'mobile'
+    ? { dpr: [1, 1.5], particles: 2048, stars: 2500, antialias: true }
+    : { dpr: [1, 2], particles: 8192, stars: 6000, antialias: true }
 }
 
-// Glowing pin shown at the searched city's location
-function CityPin({ location, name }) {
+// Camera distance at which the whole globe (plus atmosphere) fits the
+// narrower screen axis. Portrait phones get a wider lens and a longer throw.
+function fitCamera(aspect) {
+  const fov = aspect < 0.8 ? 60 : 50
+  const halfV = (fov / 2) * Math.PI / 180
+  const halfNarrow = aspect < 1 ? Math.atan(Math.tan(halfV) * aspect) : halfV
+  const distance = THREE.MathUtils.clamp(2.35 / Math.sin(halfNarrow), HOME_DISTANCE, 9.5)
+  return { fov, distance }
+}
+
+function toVector(lat, lon, distance) {
+  const p = latLonToVec3(lat, lon, distance)
+  return new THREE.Vector3(p.x, p.y, p.z)
+}
+
+function timestampForFile() {
+  const d = new Date()
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+}
+
+// Rendered after the textures inside the same Suspense boundary, so it
+// mounts only once the Earth is actually drawable.
+function ReadySignal({ onReady }) {
+  useEffect(() => { onReady?.() }, [onReady])
+  return null
+}
+
+function CityPin({ registry, location }) {
   if (!location) return null
-  const pos = latLonToVec3(location.lat, location.lon, 2.08)
   return (
-    <Html
-      position={[pos.x, pos.y, pos.z]}
-      distanceFactor={5}
-      occlude
-      style={{ pointerEvents: 'none' }}
-    >
-      <div style={{ textAlign: 'center', transform: 'translateX(-50%)' }}>
-        <div style={{
-          width: 10, height: 10, borderRadius: '50%',
-          background: '#38bdf8',
-          boxShadow: '0 0 6px #38bdf8, 0 0 14px #38bdf888',
-          margin: '0 auto',
-          animation: 'pinPulse 1.8s ease-in-out infinite',
-        }} />
-        {name && (
-          <div style={{
-            color: '#e2e8f0', fontSize: '0.68rem', fontWeight: 600,
-            background: 'rgba(3,7,17,0.82)',
-            borderRadius: 5, padding: '2px 7px',
-            marginTop: 4, whiteSpace: 'nowrap',
-            border: '1px solid rgba(56,189,248,0.35)',
-            backdropFilter: 'blur(6px)',
-          }}>
-            {name}
-          </div>
-        )}
-      </div>
-    </Html>
+    <GlobeLabel registry={registry} id="city-pin" lat={location.lat} lon={location.lon} altitude={0.08} className="city-pin">
+      <span className="city-pin__dot" />
+      {location.name && <span className="city-pin__name">{location.name}</span>}
+    </GlobeLabel>
   )
 }
 
-function Scene({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode, previewData, selectedCity, tourActive, onGlobeHover }) {
-  const controlsRef  = useRef()
+function Scene({
+  apiRef, weatherData, gridData, previewData, overlayMode, flyTo, onGlobeClick, labels,
+  onGlobeHover, onViewChange, onReady, profile, autoRotate, reducedMotion, tourActive,
+}) {
+  const { camera, gl, scene, size } = useThree()
+  const controlsRef = useRef()
+  const homeDistanceRef = useRef(HOME_DISTANCE)
+  const fittedRef = useRef(false)
   const flyTargetRef = useRef(null)
-  const { camera }   = useThree()
-  const [controlsKey, setControlsKey] = useState(0)
-  const tourIdxRef   = useRef(0)
-  const tourTimerRef = useRef(null)
+  const lastInteractionRef = useRef(0)
+  const stormsRef = useRef(gridData?.storms)
+  const scratch = useMemo(() => ({
+    from: new THREE.Vector3(), to: new THREE.Vector3(),
+    q: new THREE.Quaternion(), step: new THREE.Quaternion(),
+  }), [])
+
+  useEffect(() => { stormsRef.current = gridData?.storms }, [gridData?.storms])
+
+  // Lens follows the viewport; the starting distance is fitted only once so
+  // later resizes never undo the user's own zoom.
+  const fit = useMemo(() => fitCamera(size.width / Math.max(1, size.height)), [size.width, size.height])
+  const maxDistance = Math.max(MAX_DISTANCE, fit.distance + 1)
 
   useEffect(() => {
-    if (!flyToLocation) return
-    flyTargetRef.current = latLonToVec3(flyToLocation.lat, flyToLocation.lon, 4.2)
-    if (controlsRef.current) controlsRef.current.enabled = false
-  }, [flyToLocation])
-
-  // Storm auto-tour: fly to each detected storm every 8 seconds
-  useEffect(() => {
-    clearInterval(tourTimerRef.current)
-    if (!tourActive || !gridData?.storms?.length) return
-
-    const flyToStorm = (idx) => {
-      const storm = gridData.storms[idx % gridData.storms.length]
-      if (!storm) return
-      flyTargetRef.current = latLonToVec3(storm.lat, storm.lon, 4.0)
-      if (controlsRef.current) controlsRef.current.enabled = false
+    const { fov, distance } = fit
+    homeDistanceRef.current = distance
+    if (camera.fov !== fov) {
+      camera.fov = fov
+      camera.updateProjectionMatrix()
     }
+    if (!fittedRef.current) {
+      fittedRef.current = true
+      camera.position.setLength(Math.max(camera.position.length(), distance))
+    }
+  }, [camera, fit])
 
-    flyToStorm(tourIdxRef.current)
-    tourTimerRef.current = setInterval(() => {
-      tourIdxRef.current = (tourIdxRef.current + 1) % gridData.storms.length
-      flyToStorm(tourIdxRef.current)
-    }, 8000)
+  const flyToPoint = useCallback((lat, lon, distance) => {
+    const d = distance ?? Math.max(FOCUS_DISTANCE, homeDistanceRef.current * 0.85)
+    flyTargetRef.current = toVector(lat, lon, d)
+  }, [])
 
-    return () => clearInterval(tourTimerRef.current)
-  }, [tourActive, gridData?.storms])
+  const reportView = useCallback(() => {
+    const p = camera.position
+    onViewChange?.(vec3ToLatLon(p.x, p.y, p.z))
+  }, [camera, onViewChange])
 
-  useFrame(() => {
-    if (!flyTargetRef.current) return
-    camera.position.lerp(flyTargetRef.current, 0.07)
+  useImperativeHandle(apiRef, () => ({
+    zoom(direction) {
+      const base = flyTargetRef.current ?? camera.position
+      const length = THREE.MathUtils.clamp(base.length() * (direction < 0 ? 0.8 : 1.25), MIN_DISTANCE, Math.max(MAX_DISTANCE, homeDistanceRef.current + 1))
+      flyTargetRef.current = base.clone().setLength(length)
+    },
+    reset() {
+      const { lon } = vec3ToLatLon(camera.position.x, camera.position.y, camera.position.z)
+      flyTargetRef.current = toVector(20, lon, homeDistanceRef.current)
+    },
+    focus: flyToPoint,
+    // Renders a fresh frame and reads it back immediately, so the canvas does
+    // not need preserveDrawingBuffer (which costs performance every frame).
+    screenshot() {
+      try {
+        gl.render(scene, camera)
+        const link = document.createElement('a')
+        link.href = gl.domElement.toDataURL('image/png')
+        link.download = `weather-simulation-${timestampForFile()}.png`
+        link.click()
+        return true
+      } catch {
+        return false
+      }
+    },
+  }), [camera, gl, scene, flyToPoint])
+
+  useEffect(() => {
+    if (flyTo) flyToPoint(flyTo.lat, flyTo.lon, flyTo.distance)
+  }, [flyTo, flyToPoint])
+
+  // Storm tour: the interval only restarts when the tour is toggled, so a new
+  // grid frame every second no longer resets it back to the first storm.
+  useEffect(() => {
+    if (!tourActive) return undefined
+    let index = 0
+    const visit = () => {
+      const storms = stormsRef.current
+      if (!storms?.length) return
+      const sorted = [...storms].sort((a, b) => (a.anom ?? 0) - (b.anom ?? 0))
+      const storm = sorted[index % sorted.length]
+      index += 1
+      flyToPoint(storm.lat, storm.lon)
+    }
+    visit()
+    const timer = setInterval(visit, TOUR_INTERVAL_MS)
+    return () => clearInterval(timer)
+  }, [tourActive, flyToPoint])
+
+  useFrame((_, delta) => {
+    const controls = controlsRef.current
+    const target = flyTargetRef.current
+    if (controls) {
+      const idle = performance.now() - lastInteractionRef.current > IDLE_BEFORE_ROTATE_MS
+      controls.autoRotate = autoRotate && !reducedMotion && !tourActive && !target && idle
+    }
+    if (!target) return
+
+    // Fly along the sphere (slerp of the direction, lerp of the distance) so
+    // the camera never cuts through the globe on the way to the far side.
+    const k = reducedMotion ? 1 : 1 - Math.exp(-delta * 4.5)
+    const { from, to, q, step } = scratch
+    const length = camera.position.length()
+    from.copy(camera.position).normalize()
+    to.copy(target).normalize()
+    q.setFromUnitVectors(from, to)
+    step.identity().slerp(q, k)
+    from.applyQuaternion(step)
+    camera.position.copy(from).multiplyScalar(THREE.MathUtils.lerp(length, target.length(), k))
     camera.lookAt(0, 0, 0)
-    if (camera.position.distanceTo(flyTargetRef.current) < 0.04) {
-      camera.position.copy(flyTargetRef.current)
+
+    if (camera.position.distanceTo(target) < 0.01) {
+      camera.position.copy(target)
       camera.lookAt(0, 0, 0)
       flyTargetRef.current = null
-      // Remount OrbitControls to get a clean state (no stale damping velocity)
-      setControlsKey(k => k + 1)
+      controls?.update()
+      reportView()
     }
   })
 
-  const displayData  = previewData ?? gridData
+  const displayData = previewData ?? gridData
   const effectiveMode = (() => {
     if (!previewData) return overlayMode
-    if (overlayMode === 'storm'    && !previewData.SP) return 'temp'
-    if (overlayMode === 'humidity' && !previewData.H)  return 'temp'
-    if (overlayMode === 'precip'   && !previewData.R)  return 'temp'
+    if (overlayMode === 'storm' && !previewData.SP) return 'temp'
+    if (overlayMode === 'humidity' && !previewData.H) return 'temp'
+    if (overlayMode === 'precip' && !previewData.R) return 'temp'
     return overlayMode
   })()
 
-  const wd      = weatherData
-  const temp    = wd?.temperature    ?? 20
-  const wSpeed  = wd?.wind_speed     ?? 3
-  const wDir    = wd?.wind_direction ?? 90
-  const simTime = gridData?.simTime  ?? 0
+  const temp = weatherData?.temperature ?? 20
+  const simTime = gridData?.simTime ?? 0
+  const animated = !reducedMotion
 
   return (
     <>
       <ambientLight intensity={0.35} />
       <directionalLight position={[5, 3, 5]} intensity={1.3} />
-      <Stars radius={100} depth={60} count={6000} factor={4} saturation={0} fade />
+      <Stars radius={100} depth={60} count={profile.stars} factor={4} saturation={0} fade speed={animated ? 1 : 0} />
 
       <Suspense fallback={null}>
         <EarthGlobe temperature={temp} simTime={simTime} onGlobeClick={onGlobeClick} onGlobeHover={onGlobeHover} />
-        <CloudLayer windDirection={wDir} windSpeed={wSpeed} gridData={gridData} />
+        <CloudLayer gridData={gridData} animate={animated} />
+        <ReadySignal onReady={onReady} />
       </Suspense>
 
       <CountryBorders />
 
-      <WindParticles gridData={gridData} />
-      <RainParticles gridData={gridData} />
+      {animated && <WindParticles gridData={gridData} maxParticles={profile.particles} />}
+      {animated && <RainParticles gridData={gridData} maxParticles={profile.particles} />}
       <Atmosphere temperature={temp} />
 
-      {effectiveMode && effectiveMode !== 'wind' && effectiveMode !== 'none' && (
+      {effectiveMode !== 'wind' && effectiveMode !== 'none' && (
         <GridOverlay gridData={displayData} mode={effectiveMode} />
       )}
-      {overlayMode === 'wind' && (
-        <WindField gridData={displayData} />
-      )}
+      {overlayMode === 'wind' && <WindField gridData={displayData} />}
 
       <IsobarLines gridData={displayData} active={overlayMode === 'pressure'} />
 
-      {gridData?.storms?.length > 0 && (
-        <StormLabels storms={gridData.storms} />
-      )}
-      {gridData?.fronts?.length > 0 && (
-        <FrontalLayer fronts={gridData.fronts} />
-      )}
+      {gridData?.fronts?.length > 0 && <FrontalLayer fronts={gridData.fronts} />}
+      {animated && <LightningEffect storms={gridData?.storms} />}
 
-      <LightningEffect storms={gridData?.storms} />
-
-      <CityPin location={selectedCity} name={selectedCity?.name} />
+      <LabelProjector registry={labels} />
 
       <OrbitControls
-        key={controlsKey}
         ref={controlsRef}
         enableDamping
         dampingFactor={0.06}
         rotateSpeed={0.45}
         zoomSpeed={0.8}
-        minDistance={2.5}
-        maxDistance={9}
+        minDistance={MIN_DISTANCE}
+        maxDistance={maxDistance}
         enablePan={false}
+        autoRotateSpeed={0.35}
+        onStart={() => {
+          lastInteractionRef.current = performance.now()
+          flyTargetRef.current = null
+        }}
+        onEnd={() => {
+          lastInteractionRef.current = performance.now()
+          reportView()
+        }}
       />
     </>
   )
 }
 
-const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW']
-function windDir(u, v) {
-  const deg = Math.atan2(u, v) * 180 / Math.PI
-  return COMPASS[Math.round(((deg + 360) % 360) / 22.5) % 16]
+// Tooltip rows are rebuilt with DOM APIs and textContent only.
+function fillTooltip(el, rows, coords) {
+  const head = document.createElement('div')
+  head.className = 'globe-tooltip__coords'
+  head.textContent = coords
+  const list = document.createElement('dl')
+  list.className = 'globe-tooltip__grid'
+  for (const [label, value, color] of rows) {
+    const dt = document.createElement('dt')
+    dt.textContent = label
+    const dd = document.createElement('dd')
+    dd.textContent = value
+    dd.style.color = color
+    list.append(dt, dd)
+  }
+  el.replaceChildren(head, list)
 }
 
-export default function WeatherGlobe({ weatherData, onGlobeClick, flyToLocation, gridData, overlayMode, previewData, selectedCity }) {
-  const [tourActive, setTourActive] = useState(false)
-  const stormCount  = gridData?.storms?.length ?? 0
-  const tooltipRef  = useRef(null)
-  const gridRef     = useRef(null)
-  const lastHoverTs = useRef(0)
+export default function WeatherGlobe({
+  apiRef, weatherData, gridData, previewData, overlayMode, flyTo, selected, onGlobeClick,
+  onViewChange, onReady, initialView, quality = 'auto', layout = 'desktop', autoRotate = true,
+  reducedMotion = false, tourActive = false, prefs,
+}) {
+  const tooltipRef = useRef(null)
+  const gridRef = useRef(null)
+  const prefsRef = useRef(prefs)
+  const pendingRef = useRef(null)
+  const frameRef = useRef(0)
+  // id → { el, pos } for the DOM labels the projector moves each frame.
+  const [labels] = useState(() => new Map())
+  const profile = qualityProfile(quality, layout)
+  const [initialCamera] = useState(() => {
+    const p = latLonToVec3(initialView?.lat ?? 25, initialView?.lon ?? 15, HOME_DISTANCE)
+    return [p.x, p.y, p.z]
+  })
 
-  // Keep gridRef up-to-date without causing re-renders
   useEffect(() => { gridRef.current = previewData ?? gridData }, [gridData, previewData])
+  useEffect(() => { prefsRef.current = prefs }, [prefs])
+  useEffect(() => () => cancelAnimationFrame(frameRef.current), [])
 
-  // Stop tour if storms disappear
-  useEffect(() => { if (stormCount === 0) setTourActive(false) }, [stormCount])
-
-  // Imperative tooltip update — avoids React re-renders on every mouse move
-  const handleGlobeHover = useCallback((info) => {
+  const renderTooltip = useCallback(() => {
+    frameRef.current = 0
     const el = tooltipRef.current
+    const info = pendingRef.current
     if (!el) return
-    if (!info) { el.style.display = 'none'; return }
-
-    // Throttle to ~30fps max
-    const now = Date.now()
-    if (now - lastHoverTs.current < 33) return
-    lastHoverTs.current = now
-
+    if (!info) {
+      el.style.display = 'none'
+      return
+    }
     const { lat, lon, clientX, clientY } = info
     const g = gridRef.current
-    const T = g?.T ? sampleGrid(lat, lon, g.T) : null
-    const P = g?.P ? sampleGrid(lat, lon, g.P) : null
-    const U = g?.U ? sampleGrid(lat, lon, g.U) : 0
-    const V = g?.V ? sampleGrid(lat, lon, g.V) : 0
-    const H = g?.H ? sampleGrid(lat, lon, g.H) : null
-    const spd = Math.sqrt(U * U + V * V)
+    const p = prefsRef.current ?? {}
+    const sample = arr => (arr ? sampleGrid(lat, lon, arr, g.rows, g.cols) : null)
+    const T = sample(g?.T)
+    const P = sample(g?.P)
+    const H = sample(g?.H)
+    const R = sample(g?.R)
+    const wind = windFromComponents(sample(g?.U) ?? 0, sample(g?.V) ?? 0)
 
-    const latStr = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}`
-    const lonStr = `${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}`
+    fillTooltip(el, [
+      ['Temperature', formatTemperature(T, p.tempUnit), '#f97316'],
+      ['Pressure', formatPressure(P, 1), '#60a5fa'],
+      ['Wind', g?.U ? `${formatWind(wind.speed, p.windUnit)} from ${compassPoint(wind.fromDegrees)}` : '—', '#38bdf8'],
+      ['Humidity', formatPercent(H), '#34d399'],
+      ['Precipitation', Number.isFinite(R) ? `${Math.max(0, R).toFixed(1)} mm/h` : '—', '#818cf8'],
+    ], formatLatLon(lat, lon, 1))
 
-    el.innerHTML = `
-      <div style="color:#94a3b8;font-size:0.7rem;margin-bottom:5px;letter-spacing:0.03em">${latStr}, ${lonStr}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;font-size:0.78rem">
-        <span style="color:#94a3b8">🌡️ Temp</span>
-        <span style="color:#f97316;font-weight:600">${T !== null ? T.toFixed(1) + '°C' : '—'}</span>
-        <span style="color:#94a3b8">🔵 Pressure</span>
-        <span style="color:#60a5fa;font-weight:600">${P !== null ? P.toFixed(1) + ' hPa' : '—'}</span>
-        <span style="color:#94a3b8">💨 Wind</span>
-        <span style="color:#38bdf8;font-weight:600">${spd.toFixed(1)} m/s ${windDir(U, V)}</span>
-        <span style="color:#94a3b8">💧 Humidity</span>
-        <span style="color:#34d399;font-weight:600">${H !== null ? (H * 100).toFixed(0) + '%' : '—'}</span>
-      </div>
-    `
-
-    // Smart edge detection: flip tooltip left/right and up/down near screen edges
-    const W = window.innerWidth, H2 = window.innerHeight
-    const ttW = 200, ttH = 110
-    const left = clientX + 14 + ttW > W ? clientX - ttW - 10 : clientX + 14
-    const top  = clientY + 14 + ttH > H2 ? clientY - ttH - 6 : clientY + 14
-
-    el.style.left    = left + 'px'
-    el.style.top     = top  + 'px'
     el.style.display = 'block'
+    const { width, height } = el.getBoundingClientRect()
+    const left = clientX + 16 + width > window.innerWidth ? clientX - width - 12 : clientX + 16
+    const top = clientY + 16 + height > window.innerHeight ? clientY - height - 8 : clientY + 16
+    el.style.transform = `translate(${Math.max(4, left)}px, ${Math.max(4, top)}px)`
   }, [])
+
+  // Pointer moves are coalesced to one tooltip update per animation frame.
+  const handleGlobeHover = useCallback(info => {
+    pendingRef.current = info
+    if (!frameRef.current) frameRef.current = requestAnimationFrame(renderTooltip)
+  }, [renderTooltip])
+
+  const handleClick = useCallback((lat, lon) => {
+    pendingRef.current = null
+    if (tooltipRef.current) tooltipRef.current.style.display = 'none'
+    onGlobeClick?.(lat, lon)
+  }, [onGlobeClick])
 
   return (
     <>
-      <style>{`
-        @keyframes pinPulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50%       { opacity: 0.6; transform: scale(1.4); }
-        }
-        @keyframes tourPulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(168,85,247,0.5); }
-          50%       { box-shadow: 0 0 0 6px rgba(168,85,247,0); }
-        }
-      `}</style>
-
-      {/* Storm tour toggle — only shown when storms exist */}
-      {stormCount > 0 && (
-        <button
-          onClick={() => setTourActive(a => !a)}
-          title={tourActive ? 'Stop storm tour' : `Auto-tour ${stormCount} active storm${stormCount > 1 ? 's' : ''}`}
-          style={{
-            position: 'absolute', bottom: 80, right: 12, zIndex: 28,
-            padding: '7px 12px', borderRadius: 10,
-            background: tourActive ? 'rgba(168,85,247,0.25)' : 'rgba(10,15,30,0.82)',
-            border: `1px solid ${tourActive ? '#a855f7' : 'rgba(255,255,255,0.1)'}`,
-            color: tourActive ? '#d8b4fe' : 'rgba(255,255,255,0.55)',
-            fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
-            backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-            animation: tourActive ? 'tourPulse 2s ease-in-out infinite' : 'none',
-            display: 'flex', alignItems: 'center', gap: 5,
-            boxShadow: '0 2px 16px rgba(0,0,0,0.5)',
-          }}>
-          🌀 {tourActive ? `Touring (${stormCount})` : `${stormCount} Storm${stormCount > 1 ? 's' : ''}`}
-        </button>
-      )}
-
-      {/* Hover tooltip — imperatively updated to avoid React re-render overhead */}
-      <div
-        ref={tooltipRef}
-        style={{
-          display: 'none',
-          position: 'fixed',
-          zIndex: 35,
-          background: 'rgba(3,7,17,0.88)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: 10,
-          padding: '10px 14px',
-          color: '#e2e8f0',
-          pointerEvents: 'none',
-          backdropFilter: 'blur(14px)',
-          WebkitBackdropFilter: 'blur(14px)',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
-          minWidth: 190,
-          fontFamily: 'inherit',
-          fontSize: '0.82rem',
-          lineHeight: 1.6,
-        }}
-      />
-
+      <div ref={tooltipRef} className="globe-tooltip" role="presentation" />
       <Canvas
-        camera={{ position: [0, 1.5, 4.5], fov: 50 }}
-        style={{ background: '#030711' }}
-        gl={{ antialias: true, alpha: false }}
+        key={profile.antialias ? 'aa' : 'no-aa'}
+        className="globe-canvas"
+        camera={{ position: initialCamera, fov: 50, near: 0.1, far: 400 }}
+        dpr={profile.dpr}
+        gl={{ antialias: profile.antialias, alpha: false, powerPreference: 'high-performance' }}
+        onCreated={({ gl }) => gl.setClearColor('#030711')}
+        role="region"
+        aria-label="Interactive 3D globe. Drag to rotate, scroll or pinch to zoom, click a location for its weather."
       >
         <Scene
+          apiRef={apiRef}
           weatherData={weatherData}
-          onGlobeClick={onGlobeClick}
-          flyToLocation={flyToLocation}
           gridData={gridData}
-          overlayMode={overlayMode}
           previewData={previewData}
-          selectedCity={selectedCity}
-          tourActive={tourActive}
+          overlayMode={overlayMode}
+          flyTo={flyTo}
+          labels={labels}
+          onGlobeClick={handleClick}
           onGlobeHover={handleGlobeHover}
+          onViewChange={onViewChange}
+          onReady={onReady}
+          profile={profile}
+          autoRotate={autoRotate}
+          reducedMotion={reducedMotion}
+          tourActive={tourActive}
         />
       </Canvas>
+      <div className="globe-labels" aria-hidden="true">
+        <StormLabels registry={labels} storms={gridData?.storms} windUnit={prefs?.windUnit} />
+        <CityPin registry={labels} location={selected} />
+      </div>
     </>
   )
 }

@@ -17,13 +17,14 @@ function randLatLon() {
   return { lat, lon }
 }
 
-export default function WindParticles({ gridData }) {
+export default function WindParticles({ gridData, maxParticles = N }) {
   const pointsRef = useRef()
 
   const fps = useFPS()
-  const particleBudget = particleBudgetForFps(fps)
-  const budgetRef = useRef(8192)
-  budgetRef.current = particleBudget
+  const budgetRef = useRef(N)
+  useEffect(() => {
+    budgetRef.current = Math.max(0, Math.min(N, maxParticles, particleBudgetForFps(fps)))
+  }, [fps, maxParticles])
 
   // Per-particle state stored in typed arrays
   const state = useMemo(() => {

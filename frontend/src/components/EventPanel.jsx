@@ -1,139 +1,61 @@
-import { useState, useCallback } from 'react'
+import { useId } from 'react'
+import { EVENTS } from '../constants'
 
-const EVENTS = [
-  { id: 'cyclone',       icon: '🌀', label: 'Cyclone',   color: '#a855f7', desc: 'Drop pressure + rotating winds' },
-  { id: 'heat_dome',     icon: '🌡️', label: 'Heat Dome', color: '#f97316', desc: 'Inject +18°C + high pressure'   },
-  { id: 'cold_outbreak', icon: '❄️', label: 'Cold Air',  color: '#60a5fa', desc: 'Inject -22°C cold air mass'      },
-  { id: 'blocking_high', icon: '🔵', label: 'Blocking',  color: '#34d399', desc: 'Strong anticyclone + dry air'    },
-  { id: 'tornado',       icon: '🌪️', label: 'Tornado',   color: '#fbbf24', desc: 'Intense vortex + pressure drop' },
-]
-
-const GLASS = {
-  background: 'rgba(10,15,30,0.82)',
-  backdropFilter: 'blur(16px)',
-  WebkitBackdropFilter: 'blur(16px)',
-  border: '1px solid rgba(255,255,255,0.08)',
-}
-
-export default function EventPanel({ onStartPlacement, isMobile }) {
-  const [expanded, setExpanded] = useState(false)
-  const [selected, setSelected] = useState(null)
-
-  const handleSelect = useCallback(id => {
-    setSelected(id)
-    onStartPlacement(id)
-  }, [onStartPlacement])
-
-  const cancelPlacement = useCallback(() => {
-    setSelected(null)
-    onStartPlacement(null)
-  }, [onStartPlacement])
-
-  // Mobile: compact horizontal icon strip (used inside WeatherHUD bottom sheet)
-  if (isMobile) return (
-    <div style={{ display: 'flex', gap: 6, padding: '0 12px 4px', overflowX: 'auto', scrollbarWidth: 'none' }}>
-      {EVENTS.map(ev => (
-        <button key={ev.id} onClick={() => selected === ev.id ? cancelPlacement() : handleSelect(ev.id)} style={{
-          whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5,
-          background: selected === ev.id ? ev.color + '22' : 'rgba(255,255,255,0.04)',
-          border: `1px solid ${selected === ev.id ? ev.color : 'rgba(255,255,255,0.07)'}`,
-          color: selected === ev.id ? ev.color : 'rgba(255,255,255,0.5)',
-          borderRadius: 20, padding: '5px 12px', fontSize: '0.74rem',
-          cursor: 'pointer', minHeight: 34,
-          transition: 'all 0.2s ease',
-        }}>
-          {ev.icon} {ev.label}
-        </button>
-      ))}
+export function IntensitySlider({ value, onChange }) {
+  const id = useId()
+  const label = value < 0.75 ? 'Mild' : value < 1.5 ? 'Moderate' : value < 2.25 ? 'Strong' : 'Extreme'
+  return (
+    <div className="intensity">
+      <div className="intensity__row">
+        <label htmlFor={id}>Intensity</label>
+        <span>{label} · {value.toFixed(2)}×</span>
+      </div>
+      <input id={id} className="range" type="range" min={0.25} max={3} step={0.25}
+        value={value} onChange={e => onChange(Number(e.target.value))} />
     </div>
   )
+}
 
-  // Desktop: left-side collapsible panel with circular toggle
+// Desktop / tablet: collapsible panel docked on the left edge.
+export default function EventPanel({ open, onToggle, placementMode, onStartPlacement, intensity, onIntensity }) {
+  const panelId = useId()
   return (
-    <div style={{
-      position: 'absolute', left: 20, top: '50%', transform: 'translateY(-50%)',
-      zIndex: 20, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8,
-    }}>
-      {/* Circular toggle ⚡ */}
+    <div className="dock-left">
       <button
-        onClick={() => setExpanded(e => !e)}
-        title="Inject Weather Event"
-        style={{
-          width: 44, height: 44, borderRadius: '50%', cursor: 'pointer',
-          ...GLASS,
-          background: expanded ? 'rgba(139,92,246,0.22)' : 'rgba(10,15,30,0.82)',
-          border: `1px solid ${expanded ? '#8b5cf6' : 'rgba(255,255,255,0.08)'}`,
-          color: expanded ? '#a855f7' : 'rgba(255,255,255,0.55)',
-          fontSize: '1.1rem',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: expanded ? '0 0 18px rgba(139,92,246,0.25)' : '0 2px 16px rgba(0,0,0,0.4)',
-          transition: 'all 0.2s ease',
-        }}
-      >⚡</button>
+        type="button"
+        className="btn btn--icon event-toggle glass"
+        aria-expanded={open}
+        aria-controls={panelId}
+        aria-pressed={open}
+        title="Inject a weather event (E)"
+        onClick={onToggle}
+      >
+        <span aria-hidden="true">⚡</span>
+        <span className="sr-only">Inject a weather event</span>
+      </button>
 
-      {expanded && (
-        <div style={{
-          ...GLASS,
-          borderRadius: 16,
-          padding: '12px',
-          width: 192,
-          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-        }}>
-          <div style={{
-            color: 'rgba(255,255,255,0.3)', fontSize: '0.62rem', textTransform: 'uppercase',
-            letterSpacing: '0.1em', paddingBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.06)',
-            marginBottom: 8,
-          }}>
-            ⚡ Inject Event
-          </div>
-
-          {/* 2-column grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+      {open && (
+        <section id={panelId} className="glass panel event-panel" aria-label="Inject a weather event">
+          <h2 className="eyebrow">Inject event</h2>
+          <div className="event-grid">
             {EVENTS.map((ev, idx) => (
               <button
                 key={ev.id}
-                onClick={() => selected === ev.id ? cancelPlacement() : handleSelect(ev.id)}
+                type="button"
+                className={`btn event-btn${idx === EVENTS.length - 1 ? ' event-btn--wide' : ''}`}
+                style={{ '--tone': ev.tone }}
+                aria-pressed={placementMode === ev.id}
                 title={ev.desc}
-                style={{
-                  gridColumn: idx === 4 ? 'span 2' : undefined,
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                  background: selected === ev.id ? ev.color + '1a' : 'rgba(255,255,255,0.03)',
-                  border: `1px solid ${selected === ev.id ? ev.color : 'rgba(255,255,255,0.07)'}`,
-                  color: selected === ev.id ? ev.color : 'rgba(255,255,255,0.55)',
-                  borderRadius: 12, padding: '10px 6px', cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  animation: selected === ev.id ? 'pulse 1s infinite' : 'none',
-                }}
-                onMouseEnter={e => {
-                  if (selected !== ev.id) {
-                    e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
-                    e.currentTarget.style.borderColor = ev.color + '55'
-                  }
-                }}
-                onMouseLeave={e => {
-                  if (selected !== ev.id) {
-                    e.currentTarget.style.background = 'rgba(255,255,255,0.03)'
-                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)'
-                  }
-                }}
+                onClick={() => onStartPlacement(placementMode === ev.id ? null : ev.id)}
               >
-                <span style={{ fontSize: '1.35rem' }}>{ev.icon}</span>
-                <span style={{ fontWeight: 600, fontSize: '0.7rem', lineHeight: 1 }}>{ev.label}</span>
+                <span className="event-btn__icon" aria-hidden="true">{ev.icon}</span>
+                {ev.label}
               </button>
             ))}
           </div>
-
-          {selected && (
-            <div style={{
-              marginTop: 8, padding: '7px 10px',
-              background: 'rgba(245,158,11,0.07)',
-              border: '1px solid rgba(245,158,11,0.28)',
-              borderRadius: 8, color: '#f59e0b', fontSize: '0.68rem', textAlign: 'center',
-            }}>
-              🖱️ Click globe to place
-            </div>
-          )}
-        </div>
+          <IntensitySlider value={intensity} onChange={onIntensity} />
+          {placementMode && <div className="hint" role="status">Click the globe to place it</div>}
+        </section>
       )}
     </div>
   )

@@ -1,121 +1,103 @@
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useFPS } from '../hooks/useFPS'
 import { ArcGauge } from './ArcGauge'
+import EventFeed from './EventFeed'
+import { convertTemperature, formatTemperature, formatWind, TEMPERATURE_UNITS, WIND_UNITS } from '../utils/units'
 
-function Sparkline({ history, color, w = 56, h = 20 }) {
-  if (!history || history.length < 2) return <div style={{ height: h, width: w }} />
-  const min = Math.min(...history), max = Math.max(...history)
+function Sparkline({ history, color, w = 64, h = 22 }) {
+  if (!history || history.length < 2) return <div style={{ height: h, width: w }} aria-hidden="true" />
+  const min = Math.min(...history)
+  const max = Math.max(...history)
   const range = max - min || 1
   const pts = history.map((v, i) => {
     const x = (i / (history.length - 1)) * w
-    const y = h - ((v - min) / range) * h
-    return `${x},${y}`
+    const y = h - ((v - min) / range) * (h - 2) - 1
+    return `${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')
   return (
-    <svg width={w} height={h} style={{ display: 'block', flexShrink: 0 }}>
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <svg width={w} height={h} style={{ display: 'block', flexShrink: 0 }} aria-hidden="true">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }
 
-const LABEL = { color: 'rgba(255,255,255,0.32)', fontSize: '0.58rem', textTransform: 'uppercase', letterSpacing: '0.06em' }
-
-export default function SimStats({ gridData, weatherData, isMobile }) {
-  const [history, setHistory] = useState({ T: [], wind: [], storms: [] })
+// Rolling history of the global means, one sample per received grid tick.
+function useGridHistory(gridData, length = 60) {
+  const [history, setHistory] = useState({ T: [], wind: [] })
   const tickRef = useRef(-1)
-  const fps = useFPS()
-  const fpsColor = fps >= 45 ? '#22c55e' : fps >= 30 ? '#eab308' : fps >= 20 ? '#f97316' : '#ef4444'
-
   useEffect(() => {
     if (!gridData || gridData.tick === tickRef.current) return
     tickRef.current = gridData.tick
     setHistory(prev => ({
-      T:      [...prev.T.slice(-60),      gridData.avgT ?? 0],
-      wind:   [...prev.wind.slice(-60),   gridData.avgWind ?? 0],
-      storms: [...prev.storms.slice(-60), gridData.storms?.length ?? 0],
+      T: [...prev.T.slice(-(length - 1)), gridData.avgT ?? 0],
+      wind: [...prev.wind.slice(-(length - 1)), gridData.avgWind ?? 0],
     }))
-  }, [gridData])
+  }, [gridData, length])
+  return history
+}
 
-  if (isMobile || !gridData) return null
+export default function SimStats({ gridData, weatherData, prefs, onFocus }) {
+  const history = useGridHistory(gridData)
+  const fps = useFPS()
+  if (!gridData) return null
 
-  const avgT    = gridData.avgT?.toFixed(1)    ?? '—'
-  const avgWind = gridData.avgWind?.toFixed(1) ?? '—'
+  const fpsColor = fps >= 45 ? '#22c55e' : fps >= 30 ? '#eab308' : fps >= 20 ? '#f97316' : '#ef4444'
   const nStorms = gridData.storms?.length ?? 0
+  const tUnit = TEMPERATURE_UNITS[prefs.tempUnit] ?? TEMPERATURE_UNITS.c
+  const wUnit = WIND_UNITS[prefs.windUnit] ?? WIND_UNITS.ms
 
   return (
-    <div style={{
-      position: 'absolute', bottom: 24, left: 20, zIndex: 20,
-      background: 'rgba(10,15,30,0.82)',
-      backdropFilter: 'blur(16px)',
-      WebkitBackdropFilter: 'blur(16px)',
-      border: '1px solid rgba(255,255,255,0.08)',
-      borderRadius: 16,
-      padding: '12px 14px',
-      width: 224,
-      boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-    }}>
-      {/* Section header */}
-      <div style={{ color: 'rgba(255,255,255,0.28)', fontSize: '0.6rem', textTransform: 'uppercase',
-        letterSpacing: '0.1em', paddingBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.06)',
-        marginBottom: 10 }}>
-        📊 Sim Stats
-      </div>
+    <section className="dock-bottom-left glass panel" aria-label="Simulation statistics">
+      <h2 className="eyebrow">📊 Sim stats</h2>
 
-      {/* Arc gauges row */}
       {weatherData && (
-        <div style={{ display: 'flex', gap: 0, marginBottom: 10, paddingBottom: 10, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <ArcGauge value={weatherData.temperature} min={-20} max={50}   label="Temp"  unit="°C"  color="#f97316" size="sm" />
-          <ArcGauge value={weatherData.pressure}    min={980}  max={1040} label="Press" unit="hPa" color="#60a5fa" size="sm" />
-          <ArcGauge value={weatherData.wind_speed}  min={0}    max={30}   label="Wind"  unit="m/s" color="#34d399" size="sm" />
+        <div className="gauges">
+          <ArcGauge value={convertTemperature(weatherData.temperature, prefs.tempUnit)}
+            min={convertTemperature(-20, prefs.tempUnit)} max={convertTemperature(50, prefs.tempUnit)}
+            label="Temp" unit={tUnit.label} color="#f97316" size="sm" />
+          <ArcGauge value={weatherData.pressure} min={980} max={1040} label="Press" unit="hPa" color="#60a5fa" size="sm" />
+          <ArcGauge value={wUnit.convert(weatherData.wind_speed)} min={0} max={wUnit.convert(30)}
+            label="Wind" unit={wUnit.label} color="#34d399" size="sm" />
         </div>
       )}
 
-      {/* Sparkline rows */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+      <div className="stack">
+        <div className="stat-row">
           <div>
-            <div style={LABEL}>Avg Temp</div>
-            <div style={{ color: '#f97316', fontWeight: 700, fontSize: '0.85rem', lineHeight: 1.3 }}>{avgT}°C</div>
+            <div className="stat-label">Global mean temp</div>
+            <div className="stat-value" style={{ color: '#f97316' }}>{formatTemperature(gridData.avgT, prefs.tempUnit)}</div>
           </div>
           <Sparkline history={history.T} color="#f97316" />
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div className="stat-row">
           <div>
-            <div style={LABEL}>Avg Wind</div>
-            <div style={{ color: '#38bdf8', fontWeight: 700, fontSize: '0.85rem', lineHeight: 1.3 }}>{avgWind} m/s</div>
+            <div className="stat-label">Global mean wind</div>
+            <div className="stat-value" style={{ color: '#38bdf8' }}>{formatWind(gridData.avgWind, prefs.windUnit)}</div>
           </div>
           <Sparkline history={history.wind} color="#38bdf8" />
         </div>
 
-        {/* Storms + FPS */}
-        <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
-          <div style={{
-            flex: 1, padding: '4px 8px',
-            background: nStorms > 0 ? 'rgba(168,85,247,0.1)' : 'rgba(255,255,255,0.03)',
-            border: `1px solid ${nStorms > 0 ? 'rgba(168,85,247,0.35)' : 'rgba(255,255,255,0.06)'}`,
-            borderRadius: 8,
-          }}>
-            <div style={LABEL}>Storms</div>
-            <div style={{ color: nStorms > 0 ? '#a855f7' : 'rgba(255,255,255,0.22)', fontWeight: 700, fontSize: '0.82rem' }}>
-              {nStorms > 0 ? `🌀 ${nStorms}` : '—'}
-            </div>
+        <div className="stat-tiles">
+          <div className="stat-tile">
+            <div className="stat-label">Storms</div>
+            <div className="stat-value" style={{ color: nStorms ? '#a855f7' : 'var(--text-faint)' }}>{nStorms || '—'}</div>
           </div>
-          <div style={{
-            flex: 1, padding: '4px 8px',
-            background: 'rgba(255,255,255,0.03)',
-            border: `1px solid ${fpsColor}22`,
-            borderRadius: 8,
-          }}>
-            <div style={LABEL}>FPS</div>
-            <div style={{ color: fpsColor, fontWeight: 700, fontSize: '0.82rem' }}>{fps}</div>
+          <div className="stat-tile">
+            <div className="stat-label">Online</div>
+            <div className="stat-value" style={{ color: '#34d399' }}>{gridData.viewers ?? '—'}</div>
+          </div>
+          <div className="stat-tile">
+            <div className="stat-label">FPS</div>
+            <div className="stat-value" style={{ color: fpsColor }}>{fps}</div>
           </div>
         </div>
-      </div>
 
-      <div style={{ color: 'rgba(255,255,255,0.1)', fontSize: '0.57rem', textAlign: 'right', marginTop: 6 }}>
-        tick #{gridData.tick}
+        <div>
+          <h3 className="eyebrow" style={{ margin: '6px 0 4px' }}>Recent events</h3>
+          <EventFeed events={gridData.events} serverTime={gridData.serverTime} onFocus={onFocus} limit={3} />
+        </div>
+        <div className="muted" style={{ textAlign: 'right' }}>tick #{gridData.tick?.toLocaleString?.() ?? gridData.tick}</div>
       </div>
-    </div>
+    </section>
   )
 }
