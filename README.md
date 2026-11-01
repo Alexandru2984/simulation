@@ -241,16 +241,27 @@ make -j$(nproc)
 
 ### Build Frontend
 ```bash
-cd frontend
-npm install
-npm run build
-# Outputs to frontend/dist/ — served by Nginx
+make frontend-build   # npm ci + vite build into .tmp/frontend-dist
 ```
+Never run `npm run build` inside the production checkout. nginx serves
+`frontend/dist` from there live; only `scripts/deploy.sh` replaces it,
+atomically.
+
+### Checks and CI
+```bash
+make check   # backend build + CTest, frontend audit/test/lint/build
+make e2e     # deploy/nginx vhost + backend + built frontend in Playwright
+```
+GitHub Actions runs the same checks on every push. It adds an ASan/UBSan run and
+builds the backend on Ubuntu 26.04 with Drogon 1.9.11, as in production.
+`scripts/deploy.sh` refuses any commit that is not pushed or whose CI run is
+not green.
 
 ### Configure & Deploy
 ```bash
-# Run only from the clean production checkout after reviewing the commit.
+# Only after CI is green for the pushed commit (the preflight enforces it).
 cd /srv/canary/simulation.micutu.com/project
+git pull --ff-only
 scripts/deploy.sh
 ```
 

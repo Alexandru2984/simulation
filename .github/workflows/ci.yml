@@ -1,9 +1,13 @@
 name: CI
 
+# Every push to main must be green here before scripts/deploy.sh will ship it:
+# scripts/preflight.sh checks this workflow's result for the exact commit.
+
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # Least privilege: CI only needs to read the repository.
 permissions:
@@ -15,40 +19,71 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend
+    name: Backend (Ubuntu 26.04, Drogon 1.9.11)
     runs-on: ubuntu-24.04
+    # Same OS and Drogon release as production.
+    container: ubuntu:26.04
+    timeout-minutes: 20
     steps:
+      - name: Install git
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Trust the workspace (CMake reads the commit SHA)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install backend dependencies
+        run: scripts/ci/install-deps.sh
+
+      - name: Build backend
+        run: make backend-build BUILD_JOBS=4
+
+      - name: Test backend
+        run: make backend-test BUILD_JOBS=4
+
+      - name: Upload backend binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-binary
+          path: .tmp/backend-build/weather_backend
+          if-no-files-found: error
+          retention-days: 7
+
+  backend-sanitizers:
+    name: Backend tests under ASan + UBSan
+    runs-on: ubuntu-24.04
+    container: ubuntu:26.04
+    timeout-minutes: 25
+    steps:
+      - name: Install git
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates
+
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install backend dependencies
+        run: scripts/ci/install-deps.sh
+
+      - name: Build tests with sanitizers
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            cmake \
-            g++ \
-            libboost-dev \
-            libbrotli-dev \
-            libdrogon-dev \
-            libhiredis-dev \
-            libjsoncpp-dev \
-            libmariadb-dev \
-            libmariadb-dev-compat \
-            libpq-dev \
-            libsqlite3-dev \
-            libyaml-cpp-dev \
-            uuid-dev \
-            zlib1g-dev
+          cmake -S backend -B .tmp/sanitize -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+          cmake --build .tmp/sanitize --target test_gridsim test_security test_weathersim -j4
 
-      - name: Build backend
-        run: make backend-build
-
-      - name: Test backend
-        run: make backend-test
+      - name: Run tests with sanitizers
+        working-directory: .tmp/sanitize
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --output-on-failure
 
   frontend:
     name: Frontend
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -74,3 +109,69 @@ jobs:
 
       - name: Build frontend
         run: make frontend-build
+
+      - name: Upload frontend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: .tmp/frontend-dist
+          if-no-files-found: error
+          retention-days: 7
+
+  e2e:
+    name: End-to-end (nginx vhost + backend + browser)
+    needs: [backend, frontend]
+    runs-on: ubuntu-24.04
+    container: ubuntu:26.04
+    timeout-minutes: 25
+    steps:
+      - name: Install git
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install runtime dependencies and nginx
+        run: scripts/ci/install-deps.sh --e2e
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Download backend binary
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-binary
+          path: .tmp/e2e/bin
+
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: .tmp/e2e/dist
+
+      - name: Install Playwright and Chromium
+        working-directory: e2e
+        run: |
+          npm ci --ignore-scripts
+          npm audit --audit-level=moderate
+          npx playwright install --with-deps chromium
+
+      - name: Validate the nginx vhost and run the end-to-end suite
+        run: |
+          chmod +x .tmp/e2e/bin/weather_backend
+          scripts/ci/run-e2e.sh .tmp/e2e/bin/weather_backend .tmp/e2e/dist
+
+      - name: Upload test report and stack logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+            e2e/stack-logs
+          retention-days: 7

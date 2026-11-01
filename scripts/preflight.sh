@@ -31,8 +31,47 @@ else
 fi
 
 upstream="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
-if [[ -n "$upstream" ]] && git merge-base --is-ancestor "$upstream" HEAD; then
-    pass "HEAD contains upstream ${upstream} (ahead-only deploys are allowed)"
+head_sha="$(git rev-parse HEAD)"
+
+# A deploy ships exactly what CI verified: the pushed tip of the upstream
+# branch, with a successful CI run for that very commit. Local-only or
+# unverified commits never reach production.
+ci_gate() {
+    local workflow="${CI_WORKFLOW:-ci.yml}"
+    local runs
+    if ! runs="$(gh run list --commit "$head_sha" --workflow "$workflow" --event push \
+                    --limit 20 --json databaseId,status,conclusion 2>&1)"; then
+        fail "could not query GitHub Actions for ${head_sha:0:12}: ${runs}"
+        return
+    fi
+    local green running
+    green="$(jq -r '[.[] | select(.status == "completed" and .conclusion == "success")][0].databaseId // empty' <<<"$runs")"
+    running="$(jq -r '[.[] | select(.status != "completed")] | length' <<<"$runs")"
+    if [[ -n "$green" ]]; then
+        pass "CI (${workflow}) is green for ${head_sha:0:12} (run ${green})"
+    elif (( running > 0 )); then
+        fail "CI (${workflow}) is still running for ${head_sha:0:12}; deploy after it turns green"
+    elif [[ "$(jq 'length' <<<"$runs")" == "0" ]]; then
+        fail "no CI (${workflow}) run exists for ${head_sha:0:12}; push it and wait for CI"
+    else
+        fail "CI (${workflow}) failed for ${head_sha:0:12}; fix it before deploying"
+    fi
+}
+
+if [[ "${DEPLOY_MODE:-0}" == "1" ]]; then
+    if ! git fetch --quiet origin 2>/dev/null; then
+        fail "could not fetch origin to verify the commit being deployed"
+    fi
+    if [[ -z "$upstream" ]]; then
+        fail "current branch has no upstream configured"
+    elif [[ "$(git rev-parse "$upstream")" == "$head_sha" ]]; then
+        pass "HEAD is exactly the pushed tip of ${upstream}"
+    else
+        fail "HEAD ${head_sha:0:12} is not the pushed tip of ${upstream}; push first, wait for CI, then deploy"
+    fi
+    ci_gate
+elif [[ -n "$upstream" ]] && git merge-base --is-ancestor "$upstream" HEAD; then
+    pass "HEAD contains upstream ${upstream}"
 elif [[ -n "$upstream" ]]; then
     fail "HEAD is behind or diverged from upstream ${upstream}"
 else
@@ -83,7 +122,7 @@ for path in \
 done
 
 section "Host prerequisites"
-for cmd in cmake cmp curl git jq mv npm realpath rg sudo systemctl; do
+for cmd in cmake cmp curl gh git jq mv npm realpath rg sudo systemctl; do
     if command -v "$cmd" >/dev/null 2>&1; then
         pass "command available: $cmd"
     else

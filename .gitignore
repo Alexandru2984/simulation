@@ -14,3 +14,7 @@ frontend/.npm-cache/
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
+e2e/test-results/
+e2e/playwright-report/
+e2e/stack-logs/
+frontend/.dist-next-*/

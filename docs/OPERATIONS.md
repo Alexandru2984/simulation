@@ -22,13 +22,37 @@ Drogon backend. Do not infer the live layout from a development checkout.
 
 ## Checks Before a Deploy
 
-Run checks from a clean reviewed commit:
+The gate is GitHub Actions (`.github/workflows/ci.yml`). Every push to `main`
+runs these jobs:
+
+| Job | What it proves |
+| --- | --- |
+| Backend | Builds and tests on `ubuntu:26.04` with Drogon 1.9.11, the production OS and framework release |
+| Backend tests under ASan + UBSan | No memory errors, leaks or undefined behaviour in the test suite |
+| Frontend | `npm audit`, unit tests, lint and the production build |
+| End-to-end | The repo's nginx vhost (TLS stripped) in front of the CI-built backend and frontend, driven by Playwright on desktop and phone viewports. It covers real 404s, cache headers, security headers, hidden operator endpoints, mutation guards, binary streaming, injection, search and the mobile sheet |
+
+**Release order:** commit → the maintainer pushes → CI is green for that exact
+commit → `scripts/deploy.sh`. The deploy preflight enforces this. It refuses
+when HEAD is not exactly the pushed tip of `origin/main`, or when the `CI`
+workflow has no successful run for that SHA (still running, failed, cancelled
+or never run). It also refuses any tracked or untracked change in the checkout
+and requires running from the configured live checkout. The host needs an
+authenticated `gh` CLI for the CI lookup.
+
+The same checks run locally, without touching the live site:
 
 ```bash
 make preflight
-make check
+make check            # backend build/test, npm ci/audit/test/lint, build into .tmp/frontend-dist
+make e2e              # nginx + backend + browser (needs nginx, python3, Playwright Chromium)
 make security-audit
 ```
+
+The Makefile never writes `frontend/dist`. nginx serves that directory live
+from this checkout, so a plain `npm run build` in `frontend/` would publish
+instantly and non-atomically. Only `scripts/deploy.sh` replaces it, via a
+staging directory and `mv --exchange`.
 
 `make check` performs an isolated backend configure/build/test plus `npm ci`,
 frontend tests, dependency audit, lint, and the production build. The security
@@ -37,23 +61,23 @@ Cloudflare origin protection, live headers and non-mutating API validation. A
 valid forecast calculation is skipped by default because it consumes backend
 capacity; enable it explicitly with `ALLOW_EXPENSIVE_PROBES=1`.
 
-The deploy preflight permits commits ahead of `origin/main`, but rejects a
-behind/diverged branch, all tracked changes, and all untracked files. It also
-requires the deployment to run from the configured live checkout.
 
 ## Application Deploy
 
-Make the reviewed commit available in the live checkout, then deploy there:
+Once CI is green for the pushed commit, bring the live checkout to it and
+deploy there:
 
 ```bash
 cd /srv/canary/simulation.micutu.com/project
-git status --short --branch
+git pull --ff-only
+gh run list --workflow ci.yml --commit "$(git rev-parse HEAD)"   # must show success
 scripts/deploy.sh
 ```
 
 The script:
 
-1. validates the live checkout, service, secret-file metadata and host tools;
+1. checks that HEAD is the pushed tip with a green CI run, then validates the
+   live checkout, service, secret-file metadata and host tools;
 2. creates a fresh backend build under `/tmp` and runs CTest;
 3. runs frontend tests/audit/lint and builds into a sibling staging directory;
 4. backs up the current backend binary plus grid/history snapshots;
