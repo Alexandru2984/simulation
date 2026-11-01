@@ -11,6 +11,7 @@ public:
         ADD_METHOD_TO(GridRestController::inject,    "/api/grid/inject",   drogon::Post, drogon::Options);
         ADD_METHOD_TO(GridRestController::forecast,  "/api/grid/forecast", drogon::Post, drogon::Options);
         ADD_METHOD_TO(GridRestController::getHistory,"/api/grid/history",  drogon::Get);
+        // Operator-only: answers direct requests on 127.0.0.1, never proxied ones.
         ADD_METHOD_TO(GridRestController::getMetrics,"/api/metrics",       drogon::Get);
     METHOD_LIST_END
     void getState(const drogon::HttpRequestPtr&,

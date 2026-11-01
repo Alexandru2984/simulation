@@ -121,4 +121,5 @@ wait_for "http://127.0.0.1:${web_port}/api/readyz"
 echo "==> stack ready; running Playwright"
 
 cd "$repo_root/e2e"
-E2E_BASE_URL="http://127.0.0.1:${web_port}" npx playwright test "$@"
+E2E_BASE_URL="http://127.0.0.1:${web_port}" E2E_BACKEND_URL="http://127.0.0.1:${backend_port}" \
+    npx playwright test "$@"

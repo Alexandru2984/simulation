@@ -78,6 +78,19 @@ test('operator endpoints and dotfiles are not public', async ({ request }) => {
   expect((await request.get('/.env')).status()).toBe(404)
 })
 
+test('the backend itself refuses proxied requests to operator endpoints', async ({ request }) => {
+  const backend = process.env.E2E_BACKEND_URL
+  test.skip(!backend, 'needs E2E_BACKEND_URL (set by scripts/ci/run-e2e.sh)')
+  for (const path of ['/api/metrics', '/api/version', '/api/ops/client-errors']) {
+    expect((await request.get(`${backend}${path}`)).status(), `${path} direct`).toBe(200)
+    for (const header of ['X-Real-IP', 'X-Forwarded-For']) {
+      const res = await request.get(`${backend}${path}`, { headers: { [header]: '203.0.113.7' } })
+      expect(res.status(), `${path} with ${header}`).toBe(404)
+      expect(await res.json()).toEqual({ error: 'not_found' })
+    }
+  }
+})
+
 test('backend errors are JSON and never name the framework', async ({ request }) => {
   const res = await request.get('/api/does-not-exist')
   expect(res.status()).toBe(404)

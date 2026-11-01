@@ -178,7 +178,9 @@ What the vhost enforces:
 - `/api/metrics`, `/api/version` and `/api/ops/*` return `404` publicly,
   because they reveal the build SHA, build time, uptime and browser error
   details. `scripts/deploy.sh` and `scripts/export-metrics.sh` read them on
-  `127.0.0.1:8094`.
+  `127.0.0.1:8094`. The backend enforces the same rule on its own: it answers
+  these paths only for loopback requests without `X-Real-IP` or
+  `X-Forwarded-For`, which nginx adds to everything it proxies.
 - `/api/client-errors` (browser error reports) has its own per-IP limit
   (12/min, burst 10) and a 16 KiB body cap, so a crash loop cannot use up the
   API budget.

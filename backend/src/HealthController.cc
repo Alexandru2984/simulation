@@ -37,9 +37,14 @@ void HealthController::readyz(
 }
 
 void HealthController::version(
-    const drogon::HttpRequestPtr&,
+    const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& cb) const
 {
+    // Operator-only, like /api/metrics: refused when it came through nginx.
+    if (!Security::isDirectLocalRequest(req)) {
+        cb(Security::json("{\"error\":\"not_found\"}", drogon::k404NotFound, "GET, OPTIONS"));
+        return;
+    }
     char body[256];
     std::snprintf(body, sizeof(body),
         "{\"service\":\"weather_backend\",\"gitSha\":\"%s\","

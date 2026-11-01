@@ -253,9 +253,13 @@ void GridRestController::getHistory(
 }
 
 void GridRestController::getMetrics(
-    const drogon::HttpRequestPtr&,
+    const drogon::HttpRequestPtr& req,
     std::function<void(const drogon::HttpResponsePtr&)>&& cb) const
 {
+    if (!Security::isDirectLocalRequest(req)) {
+        cb(jsonResp("{\"error\":\"not_found\"}", drogon::k404NotFound));
+        return;
+    }
     auto& sim = GridSim::instance();
     const std::size_t clients = gridHub().size();
 
