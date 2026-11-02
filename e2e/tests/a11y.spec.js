@@ -66,8 +66,16 @@ test.describe('desktop', () => {
     await expect(group.getByRole('radio').first()).toHaveAttribute('aria-checked', 'true')
   })
 
-  test('the privacy notice and the 404 page', async ({ page }) => {
+  test('the privacy notice in both languages and the 404 page', async ({ page }) => {
     await page.goto('/privacy')
+    await expect(page.getByRole('heading', { level: 1, name: 'Privacy' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'Confidențialitate' })).toBeHidden()
+    await audit(page)
+    // The language switch works without JavaScript (:target).
+    await page.getByRole('link', { name: 'Română' }).click()
+    await expect(page).toHaveURL(/#ro$/)
+    await expect(page.getByRole('heading', { level: 1, name: 'Confidențialitate' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'Privacy' })).toBeHidden()
     await audit(page)
     await page.goto('/no-such-page')
     await audit(page)

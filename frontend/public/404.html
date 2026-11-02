@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
     <meta name="theme-color" content="#030711" />
-    <title>Page not found — Weather Simulation</title>
+    <title>Page not found · Pagină inexistentă — Weather Simulation</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <style>
       :root { color-scheme: dark; }
@@ -32,6 +32,8 @@
       }
       h1 { margin: 0 0 8px; font-size: 1.5rem; color: #fff; }
       p { margin: 0 0 22px; color: #94a3b8; }
+      .alt { margin-top: -10px; font-size: 0.92rem; }
+      .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
       a {
         display: inline-block;
         padding: 10px 18px;
@@ -49,7 +51,11 @@
       <div class="orb" aria-hidden="true"></div>
       <h1>This page drifted off the map</h1>
       <p>There is nothing at this address. The live globe is one click away.</p>
-      <a href="/">Back to the simulation</a>
+      <p class="alt" lang="ro">Pagina asta a ieșit de pe hartă: la adresa aceasta nu e nimic. Globul live e la un clic distanță.</p>
+      <div class="actions">
+        <a href="/">Back to the simulation</a>
+        <a href="/" lang="ro">Înapoi la simulare</a>
+      </div>
     </main>
   </body>
 </html>

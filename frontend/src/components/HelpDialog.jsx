@@ -20,7 +20,7 @@ const SHORTCUTS = [
 const DRIVERS = ['sun', 'wind', 'heat', 'obs', 'storm']
 
 export default function HelpDialog({ onClose }) {
-  const { t } = useI18n()
+  const { lang, t } = useI18n()
   // Split around {link} so the link stays a real element in any language.
   const [beforeLink, afterLink = ''] = t('help.privacy', { link: '\u0000' }).split('\u0000')
   return (
@@ -55,7 +55,7 @@ export default function HelpDialog({ onClose }) {
       <h3>{t('help.finePrintHeading')}</h3>
       <p>{t('help.finePrint')}</p>
       <p>
-        {beforeLink}<a href="/privacy">{t('help.privacyLink')}</a>{afterLink}
+        {beforeLink}<a href={lang === 'en' ? '/privacy' : `/privacy#${lang}`}>{t('help.privacyLink')}</a>{afterLink}
       </p>
     </Dialog>
   )

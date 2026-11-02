@@ -27,7 +27,7 @@ A full-stack production application combining a **C++ atmospheric simulation eng
 | **Accessibility** | Landmarks, labelled controls, a radio-group layer picker with arrow keys, focus-trapped dialogs; checked with axe-core (WCAG 2.1 AA) in CI |
 | **Keyboard** | `1`–`7` layers, `/` search, `e` event panel, `t` storm tour, `r` reset view, `+`/`−` zoom, `f` fullscreen, `s` screenshot, `l` back to live, `?` help, `Esc` closes the topmost layer |
 | **SEO & PWA** | Canonical/Open Graph/Twitter metadata, JSON-LD, sitemap, robots, installable web manifest, real 404s |
-| **Privacy** | No accounts, ads, analytics or tracking cookies; a plain-language notice at [`/privacy`](https://simulation.micutu.com/privacy) |
+| **Privacy** | No accounts, ads, analytics or tracking cookies; a plain-language notice in English and Romanian at [`/privacy`](https://simulation.micutu.com/privacy), with a private contact address and an RFC 9116 `security.txt` |
 | **Error reporting** | Uncaught browser errors, crashed views and undecodable frames are reported anonymously to the backend, de-duplicated and logged with a count |
 
 ---

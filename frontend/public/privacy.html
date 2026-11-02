@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#030711" />
-    <title>Privacy — Weather Simulation</title>
+    <title>Privacy · Confidențialitate — Weather Simulation</title>
     <meta name="description" content="What the Weather Simulation keeps about visitors: no accounts, no ads, no tracking cookies; short-lived server logs and anonymous error reports." />
     <link rel="canonical" href="https://simulation.micutu.com/privacy" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -52,93 +52,207 @@
       }
       .summary ul { margin: 0; }
       footer { margin-top: 48px; color: #64748b; font-size: 0.9rem; }
+      .langs { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 8px; }
+      .langs a {
+        padding: 4px 12px;
+        border: 1px solid rgba(125, 211, 252, 0.25);
+        border-radius: 999px;
+        font-size: 0.88rem;
+        text-decoration: none;
+      }
+      /* One language at a time, no JavaScript: English unless #ro is the
+         target. Browsers without :has() show both, which is still correct. */
+      main:not(:has(#ro:target)) .langs a[href="#en"],
+      main:has(#ro:target) .langs a[href="#ro"] {
+        background: rgba(125, 211, 252, 0.16);
+        color: #fff;
+      }
+      #ro:not(:target) { display: none; }
+      main:has(#ro:target) #en { display: none; }
+      article { scroll-margin-top: 120px; }
     </style>
   </head>
   <body>
     <main>
-      <a class="back" href="/">← Back to the simulation</a>
-      <h1>Privacy</h1>
-      <p class="updated">Last updated 2 November 2026</p>
+      <nav class="langs" aria-label="Language · Limba">
+        <a href="#en" lang="en">English</a>
+        <a href="#ro" lang="ro">Română</a>
+      </nav>
 
-      <div class="summary">
+      <article id="en">
+        <a class="back" href="/">← Back to the simulation</a>
+        <h1>Privacy</h1>
+        <p class="updated">Last updated 2 November 2026</p>
+
+        <div class="summary">
+          <ul>
+            <li>No accounts, no ads, no analytics and no tracking cookies.</li>
+            <li>Your settings stay in your browser.</li>
+            <li>The server keeps ordinary web logs for up to 14 days, then deletes them.</li>
+            <li>If the page crashes, an anonymous error report is sent so it can be fixed.</li>
+          </ul>
+        </div>
+
+        <h2>What stays in your browser</h2>
+        <p>
+          Your display settings (language, units, graphics quality, auto-rotate and similar) are saved in
+          your browser's local storage under <code>weather-sim:prefs:v1</code>. They are never
+          sent to the server. Clearing this site's data in your browser removes them.
+        </p>
+        <p>
+          The place and layer you are looking at live in the part of the address after
+          <code>#</code>. Browsers do not send that part to servers; it only travels if you share
+          the link yourself.
+        </p>
+
+        <h2>What the server sees</h2>
         <ul>
-          <li>No accounts, no ads, no analytics and no tracking cookies.</li>
-          <li>Your settings stay in your browser.</li>
-          <li>The server keeps ordinary web logs for up to 14 days, then deletes them.</li>
-          <li>If the page crashes, an anonymous error report is sent so it can be fixed.</li>
+          <li>
+            <strong>Web server logs.</strong> Like most websites, each request is logged with your
+            IP address, the time, the address requested, your browser's user agent and the
+            referring page. City searches and the coordinates of places you click are part of
+            the requested address. These logs are used to keep the site running and to stop
+            abuse, and are deleted after 14 days.
+          </li>
+          <li>
+            <strong>Rate limiting.</strong> To share the simulation fairly, the server counts
+            recent requests per IP address in memory for a few minutes.
+          </li>
+          <li>
+            <strong>Error reports.</strong> If the page hits an error, it sends the error message,
+            a stack trace (with addresses cut to file names on this site), an identifier of the
+            app version and your browser's user agent. No IP address, cookie, page address or
+            location is stored with a report. Reports are kept in memory until the next server
+            restart, and summarised in service logs for up to 7 days.
+          </li>
+          <li>
+            <strong>Shared events.</strong> When you inject a weather event, its type, place,
+            strength and time are shown to everyone online. Nothing links it to you. Only the
+            latest dozen events are kept, in memory.
+          </li>
         </ul>
-      </div>
 
-      <h2>What stays in your browser</h2>
-      <p>
-        Your display settings (language, units, graphics quality, auto-rotate and similar) are saved in
-        your browser's local storage under <code>weather-sim:prefs:v1</code>. They are never
-        sent to the server. Clearing this site's data in your browser removes them.
-      </p>
-      <p>
-        The place and layer you are looking at live in the part of the address after
-        <code>#</code>. Browsers do not send that part to servers; it only travels if you share
-        the link yourself.
-      </p>
+        <h2>Services this site relies on</h2>
+        <ul>
+          <li>
+            <strong>Cloudflare</strong> delivers and protects the site, so all traffic passes
+            through it. Cloudflare processes your IP address and request details for that purpose
+            and may set strictly necessary security cookies (such as <code>__cf_bm</code> or
+            <code>cf_clearance</code>) and run a bot-detection script. See
+            <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener noreferrer">Cloudflare's privacy policy</a>.
+          </li>
+          <li>
+            <strong>OpenWeather</strong> provides live observations and city search. Our server,
+            not your browser, sends it your search text or the coordinates you clicked, rounded to
+            about 1 km, so OpenWeather never sees your IP address. See
+            <a href="https://openweather.co.uk/privacy-policy" rel="noopener noreferrer">OpenWeather's privacy policy</a>.
+          </li>
+        </ul>
+        <p>Nothing is sold, shared for advertising, or used to build a profile of you.</p>
 
-      <h2>What the server sees</h2>
-      <ul>
-        <li>
-          <strong>Web server logs.</strong> Like most websites, each request is logged with your
-          IP address, the time, the address requested, your browser's user agent and the
-          referring page. City searches and the coordinates of places you click are part of
-          the requested address. These logs are used to keep the site running and to stop
-          abuse, and are deleted after 14 days.
-        </li>
-        <li>
-          <strong>Rate limiting.</strong> To share the simulation fairly, the server counts
-          recent requests per IP address in memory for a few minutes.
-        </li>
-        <li>
-          <strong>Error reports.</strong> If the page hits an error, it sends the error message,
-          a stack trace (with addresses cut to file names on this site), an identifier of the
-          app version and your browser's user agent. No IP address, cookie, page address or
-          location is stored with a report. Reports are kept in memory until the next server
-          restart, and summarised in service logs for up to 7 days.
-        </li>
-        <li>
-          <strong>Shared events.</strong> When you inject a weather event, its type, place,
-          strength and time are shown to everyone online. Nothing links it to you. Only the
-          latest dozen events are kept, in memory.
-        </li>
-      </ul>
+        <h2>Your choices and rights</h2>
+        <p>
+          You can use the simulation without giving any personal information. Because nothing is
+          tied to an account, the server cannot look you up by name. If you want to know what logs
+          hold about your IP address, or want it deleted before the 14 days are up, write to
+          <a href="mailto:984.alexmihai+simulation@proton.me">984.alexmihai+simulation@proton.me</a>
+          and include your IP address and the approximate time of your visit. Depending on where you
+          live, you may also complain to your data-protection authority.
+        </p>
+        <p>
+          Bugs and questions that are not about you personally are welcome as issues at
+          <a href="https://github.com/Alexandru2984/simulation/issues" rel="noopener noreferrer">github.com/Alexandru2984/simulation</a>.
+        </p>
+      </article>
 
-      <h2>Services this site relies on</h2>
-      <ul>
-        <li>
-          <strong>Cloudflare</strong> delivers and protects the site, so all traffic passes
-          through it. Cloudflare processes your IP address and request details for that purpose
-          and may set strictly necessary security cookies (such as <code>__cf_bm</code> or
-          <code>cf_clearance</code>) and run a bot-detection script. See
-          <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener noreferrer">Cloudflare's privacy policy</a>.
-        </li>
-        <li>
-          <strong>OpenWeather</strong> provides live observations and city search. Our server,
-          not your browser, sends it your search text or the coordinates you clicked, rounded to
-          about 1 km, so OpenWeather never sees your IP address. See
-          <a href="https://openweather.co.uk/privacy-policy" rel="noopener noreferrer">OpenWeather's privacy policy</a>.
-        </li>
-      </ul>
-      <p>Nothing is sold, shared for advertising, or used to build a profile of you.</p>
+      <article id="ro" lang="ro">
+        <a class="back" href="/">← Înapoi la simulare</a>
+        <h1>Confidențialitate</h1>
+        <p class="updated">Actualizat la 2 noiembrie 2026</p>
 
-      <h2>Your choices and rights</h2>
-      <p>
-        You can use the simulation without giving any personal information. Because nothing is
-        tied to an account, the server cannot look you up by name. If you want to know what logs
-        hold about your IP address, or want it deleted before the 14 days are up, write to
-        <a href="mailto:984.alexmihai+simulation@proton.me">984.alexmihai+simulation@proton.me</a>
-        and include the address and the approximate time of your visit. Depending on where you
-        live, you may also complain to your data-protection authority.
-      </p>
-      <p>
-        Bugs and questions that are not about you personally are welcome as issues at
-        <a href="https://github.com/Alexandru2984/simulation/issues" rel="noopener noreferrer">github.com/Alexandru2984/simulation</a>.
-      </p>
+        <div class="summary">
+          <ul>
+            <li>Fără conturi, fără reclame, fără statistici de trafic și fără cookie-uri de urmărire.</li>
+            <li>Setările tale rămân în browser.</li>
+            <li>Serverul păstrează jurnale web obișnuite cel mult 14 zile, apoi le șterge.</li>
+            <li>Dacă pagina se blochează, se trimite un raport de eroare anonim, ca problema să poată fi reparată.</li>
+          </ul>
+        </div>
+
+        <h2>Ce rămâne în browserul tău</h2>
+        <p>
+          Setările de afișare (limbă, unități, calitatea graficii, rotirea automată și altele
+          asemenea) sunt salvate în spațiul de stocare local al browserului, sub cheia
+          <code>weather-sim:prefs:v1</code>. Nu sunt trimise niciodată la server. Dacă ștergi datele
+          acestui site din browser, dispar și ele.
+        </p>
+        <p>
+          Locul și stratul pe care le privești sunt păstrate în partea adresei de după
+          <code>#</code>. Browserele nu trimit această parte la server; ea ajunge la alții doar dacă
+          le trimiți tu linkul.
+        </p>
+
+        <h2>Ce vede serverul</h2>
+        <ul>
+          <li>
+            <strong>Jurnalele serverului web.</strong> Ca la majoritatea site-urilor, fiecare cerere
+            este înregistrată cu adresa IP, ora, adresa cerută, identificatorul browserului (user
+            agent) și pagina de proveniență. Căutările de orașe și coordonatele locurilor pe care
+            apeși fac parte din adresa cerută. Jurnalele servesc la funcționarea site-ului și la
+            oprirea abuzurilor și sunt șterse după 14 zile.
+          </li>
+          <li>
+            <strong>Limitarea traficului.</strong> Ca simularea să fie împărțită corect, serverul
+            numără în memorie, timp de câteva minute, cererile recente ale fiecărei adrese IP.
+          </li>
+          <li>
+            <strong>Rapoarte de eroare.</strong> Dacă pagina întâlnește o eroare, trimite mesajul
+            erorii, un stack trace (cu adresele reduse la numele fișierelor de pe acest site), un
+            identificator al versiunii aplicației și user agent-ul browserului. Împreună cu raportul
+            nu se păstrează nicio adresă IP, niciun cookie, nicio adresă de pagină și nicio locație.
+            Rapoartele stau în memorie până la următoarea repornire a serverului, iar jurnalele
+            serviciului le păstrează sub formă de rezumat cel mult 7 zile.
+          </li>
+          <li>
+            <strong>Evenimente comune.</strong> Când plasezi un eveniment meteo, tipul, locul,
+            intensitatea și ora lui sunt arătate tuturor celor conectați. Nimic nu îl leagă de tine.
+            Se păstrează, în memorie, doar cele mai recente aproximativ 12 evenimente.
+          </li>
+        </ul>
+
+        <h2>Servicii de care depinde site-ul</h2>
+        <ul>
+          <li>
+            <strong>Cloudflare</strong> livrează și protejează site-ul, așa că tot traficul trece prin
+            el. Cloudflare prelucrează adresa ta IP și detaliile cererii în acest scop și poate seta
+            cookie-uri de securitate strict necesare (precum <code>__cf_bm</code> sau
+            <code>cf_clearance</code>) și rula un script de detectare a roboților. Vezi
+            <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener noreferrer">politica de confidențialitate Cloudflare</a>.
+          </li>
+          <li>
+            <strong>OpenWeather</strong> furnizează observațiile live și căutarea de orașe. Serverul
+            nostru, nu browserul tău, îi trimite textul căutat sau coordonatele pe care ai apăsat,
+            rotunjite la aproximativ 1 km, așa că OpenWeather nu îți vede niciodată adresa IP. Vezi
+            <a href="https://openweather.co.uk/privacy-policy" rel="noopener noreferrer">politica de confidențialitate OpenWeather</a>.
+          </li>
+        </ul>
+        <p>Nimic nu este vândut, dat mai departe pentru reclame sau folosit ca să ți se facă un profil.</p>
+
+        <h2>Opțiunile și drepturile tale</h2>
+        <p>
+          Poți folosi simularea fără să dai nicio informație personală. Pentru că nimic nu e legat de
+          un cont, serverul nu te poate căuta după nume. Dacă vrei să afli ce conțin jurnalele despre
+          adresa ta IP sau vrei să fie ștearsă înainte de cele 14 zile, scrie la
+          <a href="mailto:984.alexmihai+simulation@proton.me">984.alexmihai+simulation@proton.me</a>
+          și menționează adresa IP și ora aproximativă a vizitei. Poți depune și o plângere la
+          autoritatea pentru protecția datelor din țara ta; în România, aceasta este
+          <a href="https://www.dataprotection.ro/" rel="noopener noreferrer">ANSPDCP</a>.
+        </p>
+        <p>
+          Erorile și întrebările care nu te privesc personal sunt binevenite ca issues pe
+          <a href="https://github.com/Alexandru2984/simulation/issues" rel="noopener noreferrer">github.com/Alexandru2984/simulation</a>.
+        </p>
+      </article>
 
       <footer>Weather Simulation · simulation.micutu.com</footer>
     </main>

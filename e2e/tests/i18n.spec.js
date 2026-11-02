@@ -20,6 +20,13 @@ test('a Romanian browser gets the Romanian interface and number format', async (
 
   await page.keyboard.press('3')
   await expect(page.getByRole('radio', { name: 'Presiune' }).first()).toHaveAttribute('aria-checked', 'true')
+
+  // Help links to the Romanian half of the privacy notice.
+  await page.keyboard.press('?')
+  const help = page.getByRole('dialog', { name: 'Despre această simulare' })
+  await expect(help.getByRole('link', { name: 'nota de confidențialitate' })).toHaveAttribute('href', '/privacy#ro')
+  await page.keyboard.press('Escape')
+  await expect(help).toHaveCount(0)
   expect(errors).toEqual([])
 
   // Errors from the API are translated from their stable codes. (The browser

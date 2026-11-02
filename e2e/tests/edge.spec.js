@@ -76,6 +76,8 @@ test('the privacy notice is served at a clean address', async ({ request }) => {
   expect(res.headers()['cache-control']).toContain('max-age=3600')
   const html = await res.text()
   expect(html).toContain('<h1>Privacy</h1>')
+  expect(html).toContain('<article id="ro" lang="ro">')
+  expect(html).toContain('<h1>Confidențialitate</h1>')
   expect(html).not.toContain('<script')
 
   const legacy = await request.get('/privacy.html', { maxRedirects: 0 })
