@@ -118,6 +118,9 @@ jobs:
         with:
           name: frontend-dist
           path: .tmp/frontend-dist
+          # The build ships /.well-known/security.txt; upload-artifact skips
+          # dotfiles unless told otherwise.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 7
 
