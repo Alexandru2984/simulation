@@ -33,6 +33,12 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
     },
     { name: 'mobile', testMatch: /mobile\.spec\.js/, use: { ...devices['Pixel 7'] } },
+    // Runtime performance budget (bytes, paint, layout shift, stream rate).
+    {
+      name: 'perf',
+      testMatch: /perf\.spec\.js/,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+    },
     // Accessibility (axe-core, WCAG 2.1 AA); sets its own viewports.
     { name: 'a11y', testMatch: /a11y\.spec\.js/, use: { ...devices['Desktop Chrome'] } },
   ],

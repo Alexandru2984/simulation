@@ -22,6 +22,7 @@ A full-stack production application combining a **C++ atmospheric simulation eng
 | **Sharing** | The URL hash keeps the view (`#lat=44.43&lon=26.10&layer=temp`); share via the native share sheet or clipboard, PNG screenshots |
 | **Mobile** | Phone layout with a compact top bar, a swipeable bottom sheet and floating actions. Desktop and tablet use docked panels. Safe-area aware |
 | **Settings** | °C/°F, m/s · km/h · mph · kn and graphics quality (auto/low/high). The globe honours `prefers-reduced-motion` |
+| **Performance** | About 90 KB of JavaScript (gzip) before first paint; the globe, dialogs and popups load lazily. A first visit is about 720 KB, a repeat visit about 0.3 KB (everything cached). The live stream costs about 8 KB/s. CI enforces size and runtime budgets |
 | **Accessibility** | Landmarks, labelled controls, a radio-group layer picker with arrow keys, focus-trapped dialogs; checked with axe-core (WCAG 2.1 AA) in CI |
 | **Keyboard** | `1`–`7` layers, `/` search, `e` event panel, `t` storm tour, `r` reset view, `+`/`−` zoom, `f` fullscreen, `s` screenshot, `l` back to live, `?` help, `Esc` closes the topmost layer |
 | **SEO & PWA** | Canonical/Open Graph/Twitter metadata, JSON-LD, sitemap, robots, installable web manifest, real 404s |
@@ -303,7 +304,7 @@ atomically.
 
 ### Checks and CI
 ```bash
-make check   # backend build + CTest, frontend audit/test/lint/build
+make check   # backend build + CTest, frontend audit/test/lint/build + size budget
 make e2e     # deploy/nginx vhost + backend + built frontend in Playwright, plus axe accessibility checks
 ```
 GitHub Actions runs the same checks on every push. It adds an ASan/UBSan run and

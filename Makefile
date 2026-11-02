@@ -8,11 +8,11 @@ CMAKE_BUILD_TYPE ?= Release
 BUILD_JOBS ?= 2
 NPM ?= npm
 
-.PHONY: all check preflight security-audit backend-configure backend-build backend-test frontend-install frontend-audit frontend-test frontend-lint frontend-build e2e-install e2e clean
+.PHONY: all check preflight security-audit backend-configure backend-build backend-test frontend-install frontend-audit frontend-test frontend-lint frontend-build frontend-budget e2e-install e2e clean
 
 all: check
 
-check: backend-build backend-test frontend-audit frontend-test frontend-lint frontend-build
+check: backend-build backend-test frontend-audit frontend-test frontend-lint frontend-build frontend-budget
 
 preflight:
 	scripts/preflight.sh
@@ -44,6 +44,10 @@ frontend-lint: frontend-install
 
 frontend-build: frontend-install
 	cd frontend && $(NPM) run build -- --outDir "$(FRONTEND_DIST)" --emptyOutDir
+
+# Size budget of the build in $(FRONTEND_DIST) (see frontend/scripts/check-budget.mjs).
+frontend-budget:
+	node frontend/scripts/check-budget.mjs "$(FRONTEND_DIST)"
 
 e2e-install:
 	cd e2e && $(NPM) ci --ignore-scripts

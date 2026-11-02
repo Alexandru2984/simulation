@@ -38,6 +38,20 @@ run under `node --test`.
 preloads React alone. The 3D globe, dialogs and popups are lazy-loaded behind
 the HUD and the static splash screen in `index.html`.
 
+### Performance budget
+
+`scripts/check-budget.mjs` measures a build the way visitors receive it (gzip
+for code and markup, raw bytes for images) and fails CI when a limit is
+exceeded: the JavaScript and CSS needed before first paint, all JavaScript,
+the largest chunk, textures, and icons. The table also lands in the CI job
+summary. Raising a limit is a deliberate edit to that script.
+
+```bash
+make frontend-build frontend-budget   # from the repository root
+```
+
+The e2e suite adds a runtime budget in a real browser (`e2e/tests/perf.spec.js`).
+
 ## Static assets and SEO
 
 - `index.html` carries the title, description, canonical URL, Open Graph and

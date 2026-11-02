@@ -110,6 +110,9 @@ jobs:
       - name: Build frontend
         run: make frontend-build
 
+      - name: Check the performance budget
+        run: make frontend-budget
+
       - name: Upload frontend build
         uses: actions/upload-artifact@v4
         with:
