@@ -176,6 +176,50 @@ test('a full server is reported and retried slowly', () => {
   h.manager.stop()
 })
 
+test('returning to the tab keeps the full-server backoff', () => {
+  const h = makeHarness()
+  h.manager.start()
+  h.sockets[0].open()
+  h.sockets[0].serverClose(1013)
+
+  // A pending retry is not pulled forward by switching tabs.
+  h.advance(2_000)
+  h.setVisible(false)
+  h.emitDocument('visibilitychange')
+  h.setVisible(true)
+  h.emitDocument('visibilitychange')
+  assert.equal(h.sockets.length, 1)
+  h.advance(5_999)
+  assert.equal(h.sockets.length, 1)
+  h.advance(1)
+  assert.equal(h.sockets.length, 2)
+
+  // Still full: the retry that was skipped while hidden is scheduled with
+  // backoff when the tab returns, not run at once. Same for coming online.
+  h.sockets[1].open()
+  h.setVisible(false)
+  h.sockets[1].serverClose(1013)
+  h.setVisible(true)
+  h.emitDocument('visibilitychange')
+  assert.equal(h.sockets.length, 2)
+  assert.equal(h.statuses.at(-1), 'full')
+  h.emitWindow('online')
+  assert.equal(h.sockets.length, 2)
+  h.advance(30_000)
+  assert.equal(h.sockets.length, 3)
+
+  // Once a connection delivers frames, the tab resumes immediately again.
+  h.sockets[2].open()
+  h.sockets[2].message('{}')
+  h.sockets[2].serverClose(1006)
+  h.setVisible(false)
+  h.emitDocument('visibilitychange')
+  h.setVisible(true)
+  h.emitDocument('visibilitychange')
+  assert.equal(h.sockets.length, 4)
+  h.manager.stop()
+})
+
 test('background tabs give the connection back and resume when visible', () => {
   const h = makeHarness()
   h.manager.start()

@@ -43,6 +43,8 @@ export function createWebSocketManager({
   let lastMessageAt = null
   let staleGeneration = 0
   let pauseTimer = null
+  // Set by a 1013 close, cleared by the first frame of a later connection.
+  let serverFull = false
 
   const clearTimer = (name) => {
     const id = name === 'reconnect'
@@ -144,6 +146,7 @@ export function createWebSocketManager({
 
     nextSocket.onmessage = event => {
       if (stopped || token !== generation) return
+      serverFull = false
       lastMessageAt = now()
       armStaleTimer(token)
       armStableTimer(token)
@@ -161,6 +164,7 @@ export function createWebSocketManager({
       socket = null
       clearConnectionTimers()
       if (event?.code === CLOSE_TRY_AGAIN_LATER) {
+        serverFull = true
         reconnectAttempt = Math.max(reconnectAttempt, FULL_MIN_ATTEMPT)
         scheduleReconnect('full')
         return
@@ -190,8 +194,16 @@ export function createWebSocketManager({
     onStatus('offline')
   }
 
+  // A full server keeps its backoff: coming back online or to the tab must
+  // not let every waiting viewer retry at the same moment.
+  const resumeWhileFull = () => {
+    if (!serverFull) return false
+    if (reconnectTimer === null) scheduleReconnect('full')
+    return true
+  }
+
   const handleOnline = () => {
-    if (stopped) return
+    if (stopped || resumeWhileFull()) return
     reconnectAttempt = 0
     connect()
   }
@@ -214,6 +226,7 @@ export function createWebSocketManager({
     }
     clearTimer('pause')
     if (!socketIsActive()) {
+      if (resumeWhileFull()) return
       reconnectAttempt = 0
       connect()
       return
