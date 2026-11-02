@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildIdFromUrl, buildReport, createErrorReporter, scrubUrls } from './errorReporter.js'
+import {
+  buildIdFromUrl, buildReport, createErrorReporter, fitReport, MAX_BODY_BYTES, scrubUrls,
+} from './errorReporter.js'
 
 const ORIGIN = 'https://simulation.micutu.com'
 
@@ -72,4 +74,30 @@ test('the build id is the hashed entry bundle name', () => {
   assert.equal(buildIdFromUrl(`${ORIGIN}/assets/index-BX3k9a_Z.js`), 'index-BX3k9a_Z')
   assert.equal(buildIdFromUrl('/src/main.jsx'), undefined)
   assert.equal(buildIdFromUrl(undefined), undefined)
+})
+
+const bodyBytes = report => new TextEncoder().encode(JSON.stringify(report)).length
+const hasLoneSurrogate = text => /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text)
+
+test('reports fit the backend byte limit whatever the script', () => {
+  const error = new Error('東京'.repeat(400))
+  error.stack = `Error: x\n${'東京で失敗しました '.repeat(600)}`
+  const report = buildReport('error', error, { origin: ORIGIN, source: `${ORIGIN}/${'é'.repeat(900)}` })
+  assert.ok(bodyBytes(report) <= MAX_BODY_BYTES, `body is ${bodyBytes(report)} bytes`)
+  assert.ok(report.stack.length > 1000, 'the stack is shortened, not dropped')
+  assert.ok(report.message.length <= 300 && report.source.length <= 300)
+
+  const ascii = buildReport('error', new Error('plain'), { origin: ORIGIN })
+  assert.deepEqual(fitReport({ ...ascii }), ascii, 'small reports are untouched')
+})
+
+test('truncation never splits a surrogate pair', () => {
+  for (let shift = 0; shift < 4; shift++) {
+    const error = new Error(`${'x'.repeat(shift)}${'😀'.repeat(400)}`)
+    error.stack = `${'y'.repeat(shift)}${'🌀'.repeat(3000)}`
+    const report = buildReport('error', error, { origin: ORIGIN })
+    assert.equal(hasLoneSurrogate(report.message), false, `message, shift ${shift}`)
+    assert.equal(hasLoneSurrogate(report.stack), false, `stack, shift ${shift}`)
+    assert.ok(bodyBytes(report) <= MAX_BODY_BYTES)
+  }
 })

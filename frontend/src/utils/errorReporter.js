@@ -8,7 +8,10 @@
 export const ENDPOINT = '/api/client-errors'
 const MAX_REPORTS = 5
 const MAX_MESSAGE = 300
+const MAX_SOURCE = 300
 const MAX_STACK = 3500
+// The backend refuses bodies over 8 KiB; leave room for rounding.
+export const MAX_BODY_BYTES = 8000
 
 // Noise that says nothing about this app.
 const IGNORED_MESSAGES = [
@@ -18,7 +21,32 @@ const IGNORED_MESSAGES = [
 ]
 const EXTENSION_URL = /\b(?:chrome|moz|safari(?:-web)?|ms-browser)-extension:\/\//i
 
-const truncate = (text, max) => (text.length > max ? `${text.slice(0, max - 1)}…` : text)
+// Cuts on a code point boundary: half a surrogate pair is invalid JSON
+// for the backend's parser and would lose the whole report.
+function truncate(text, max) {
+  if (text.length <= max) return text
+  let end = Math.max(0, max - 1)
+  const last = text.charCodeAt(end - 1)
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1
+  return `${text.slice(0, end)}…`
+}
+
+const encoder = new TextEncoder()
+const jsonBytes = value => encoder.encode(JSON.stringify(value)).length
+
+// Character limits are not byte limits: 3500 CJK characters are ~10 KB of
+// UTF-8. Shortens the stack until the JSON body fits; the other fields are
+// bounded well below the limit on their own.
+export function fitReport(report, maxBytes = MAX_BODY_BYTES) {
+  let size = jsonBytes(report)
+  while (size > maxBytes && report.stack) {
+    const keep = Math.floor(report.stack.length * (maxBytes / size)) - 16
+    if (keep < 32) delete report.stack
+    else report.stack = truncate(report.stack, keep)
+    size = jsonBytes(report)
+  }
+  return report
+}
 
 function describe(error) {
   if (error instanceof Error) {
@@ -70,11 +98,11 @@ export function buildReport(kind, error, { origin, build, source, line, col, com
 
   const report = { kind, message: scrubUrls(message, origin) }
   if (stack.trim()) report.stack = truncate(scrubUrls(stack.trim(), origin), MAX_STACK)
-  if (source) report.source = scrubUrls(source, origin)
+  if (source) report.source = truncate(scrubUrls(source, origin), MAX_SOURCE)
   if (Number.isInteger(line) && line > 0) report.line = line
   if (Number.isInteger(col) && col > 0) report.col = col
   if (build) report.build = build
-  return report
+  return fitReport(report)
 }
 
 // `send(report)` delivers one report; tests pass a fake.
