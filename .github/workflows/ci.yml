@@ -145,13 +145,13 @@ jobs:
           cache-dependency-path: e2e/package-lock.json
 
       - name: Download backend binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: backend-binary
           path: .tmp/e2e/bin
 
       - name: Download frontend build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: frontend-dist
           path: .tmp/e2e/dist
