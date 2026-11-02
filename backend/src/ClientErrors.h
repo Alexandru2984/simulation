@@ -214,7 +214,8 @@ struct Decision {
 
 class Store {
 public:
-    // `capacity` distinct fingerprints are kept (least recently seen evicted);
+    // `capacity` distinct fingerprints are kept (the rarest is evicted, see
+    // evictRarest);
     // each is logged at most once per `relogSeconds`, and all log lines share
     // a budget of `linesPerMinute`, so a flood of distinct junk cannot fill
     // the journal.
@@ -230,7 +231,7 @@ public:
 
         auto it = entries_.find(decision.fingerprint);
         if (it == entries_.end()) {
-            if (entries_.size() >= capacity_) evictLeastRecent();
+            if (entries_.size() >= capacity_) evictRarest();
             Entry entry;
             entry.sample = report;
             entry.firstSeen = nowUnix;
@@ -318,10 +319,16 @@ private:
         long long lastLogged = -1;
     };
 
-    void evictLeastRecent() {
+    // Lowest count first, then least recently seen. A flood of distinct junk
+    // (each seen once) only churns among itself, while a real crash with a
+    // high count stays visible to the operator until the next restart.
+    void evictRarest() {
         auto victim = entries_.begin();
-        for (auto it = entries_.begin(); it != entries_.end(); ++it)
-            if (it->second.lastSeen < victim->second.lastSeen) victim = it;
+        for (auto it = entries_.begin(); it != entries_.end(); ++it) {
+            const Entry& e = it->second;
+            const Entry& v = victim->second;
+            if (e.count < v.count || (e.count == v.count && e.lastSeen < v.lastSeen)) victim = it;
+        }
         if (victim != entries_.end()) entries_.erase(victim);
     }
 

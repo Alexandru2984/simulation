@@ -452,6 +452,36 @@ TEST(client_error_store_folds_repeats_and_throttles_logs) {
             "most frequent first");
 }
 
+TEST(client_error_store_keeps_frequent_errors_through_a_flood) {
+    ClientErrors::Store store(4, 600, 100.0);
+    ClientErrors::Report real;
+    real.kind = "error";
+    real.message = "real crash";
+    for (int i = 0; i < 50; ++i) store.record(real, 1000 + i);
+    ClientErrors::Report rare = real;
+    rare.message = "seen twice";
+    store.record(rare, 1100);
+    store.record(rare, 1101);
+
+    // 200 distinct one-off messages, all newer than both real errors.
+    for (int i = 0; i < 200; ++i) {
+        ClientErrors::Report junk = real;
+        junk.message = "junk " + std::to_string(i);
+        store.record(junk, 2000 + i);
+    }
+
+    const auto summary = store.summary(10);
+    require(summary["distinct"].asUInt64() == 4, "capacity holds");
+    require(summary["errors"][0]["message"].asString() == "real crash" &&
+                summary["errors"][0]["count"].asUInt64() == 50,
+            "the frequent error and its count survive");
+    require(summary["errors"][1]["message"].asString() == "seen twice",
+            "a repeated error outlives one-off junk");
+    require(summary["errors"][2]["message"].asString() == "junk 199" &&
+                summary["errors"][3]["message"].asString() == "junk 198",
+            "only the newest junk is left, most recent first");
+}
+
 int main() {
     printf("\n=== Security Unit Tests ===\n\n");
 
@@ -481,6 +511,7 @@ int main() {
     RUN(client_error_text_truncates_on_character_boundaries);
     RUN(client_error_sources_are_paths_on_this_site);
     RUN(client_error_store_folds_repeats_and_throttles_logs);
+    RUN(client_error_store_keeps_frequent_errors_through_a_flood);
 
     printf("\n=== %d passed, %d failed ===\n\n", passed, failed);
     return failed > 0 ? 1 : 0;
