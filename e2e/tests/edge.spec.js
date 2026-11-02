@@ -84,6 +84,20 @@ test('the privacy notice is served at a clean address', async ({ request }) => {
   expect(await (await request.get('/sitemap.xml')).text()).toContain('https://simulation.micutu.com/privacy')
 })
 
+test('security.txt names a contact and is renewed in time', async ({ request }) => {
+  const res = await request.get('/.well-known/security.txt')
+  expect(res.status()).toBe(200)
+  expect(res.headers()['content-type']).toBe('text/plain; charset=utf-8')
+  const text = await res.text()
+  expect(text).toMatch(/^Contact: mailto:[^\s@]+@[^\s@]+\.[a-z]+$/m)
+  expect(text).toMatch(/^Canonical: https:\/\/simulation\.micutu\.com\/\.well-known\/security\.txt$/m)
+  // RFC 9116: at most a year ahead. Fails a month early so there is time to renew.
+  const expires = Date.parse(/^Expires: (\S+)$/m.exec(text)?.[1])
+  const day = 24 * 3600 * 1000
+  expect(expires - Date.now()).toBeGreaterThan(30 * day)
+  expect(expires - Date.now()).toBeLessThan(366 * day)
+})
+
 test('operator endpoints and dotfiles are not public', async ({ request }) => {
   for (const path of ['/api/metrics', '/api/version', '/api/ops/client-errors']) {
     const res = await request.get(path)

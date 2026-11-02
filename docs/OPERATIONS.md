@@ -186,7 +186,12 @@ What the vhost enforces:
 - `/api/client-errors` (browser error reports) has its own per-IP limit
   (12/min, burst 10) and a 16 KiB body cap, so a crash loop cannot use up the
   API budget.
-- Rate-limited requests get `429` rather than `503`. Dotfiles are never served.
+- Rate-limited requests get `429` rather than `503`. Dotfiles are never
+  served, except `/.well-known/`.
+- `/.well-known/security.txt` (RFC 9116) names the security contact, the same
+  address as the privacy notice. Its `Expires` must stay within a year;
+  the edge e2e test starts failing 30 days before it passes, so CI is the
+  reminder: bump the date in `frontend/public/.well-known/security.txt`.
 - Every location that sets its own header re-includes the security-header
   snippet, because nginx drops server-level `add_header` in such locations.
 

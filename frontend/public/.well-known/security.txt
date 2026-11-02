@@ -1,0 +1,6 @@
+# Security contact for simulation.micutu.com (RFC 9116).
+# Renew Expires before it passes; CI fails a month ahead as a reminder.
+Contact: mailto:984.alexmihai+simulation@proton.me
+Expires: 2027-11-01T00:00:00.000Z
+Preferred-Languages: en, ro
+Canonical: https://simulation.micutu.com/.well-known/security.txt
