@@ -104,3 +104,44 @@ test('an uncaught error is reported anonymously, once', async ({ page }) => {
   expect(JSON.stringify(body)).not.toMatch(/lat=|lon=|127\.0\.0\.1/)
   expect(reports[0].headers().cookie).toBeUndefined()
 })
+
+// lat/lon from the shareable URL, which the globe updates after each move.
+const viewFromUrl = url => {
+  const hash = new URL(url).hash
+  return { lat: Number(hash.match(/lat=(-?[\d.]+)/)[1]), lon: Number(hash.match(/lon=(-?[\d.]+)/)[1]) }
+}
+const degreesApart = (a, b) => Math.abs(((a - b + 540) % 360) - 180)
+
+test('changing graphics quality rebuilds the globe without moving the camera', async ({ page }) => {
+  const errors = watchErrors(page)
+  // No idle auto-rotation, and flights land in one frame.
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await openApp(page, '#lat=44.43&lon=26.10&layer=temp')
+
+  // A fly-to request (as from a shared link), then a move that is not one:
+  // "reset view" keeps the longitude and returns to latitude 20.
+  // Three decimals: the hash the app writes back after landing has two.
+  await page.evaluate(() => { window.location.hash = '#lat=-30.004&lon=140.004&layer=temp' })
+  await expect.poll(() => new URL(page.url()).hash).toMatch(/^#lat=-30\.00&lon=140\.00&/)
+  await page.keyboard.press('r')
+  await expect.poll(() => viewFromUrl(page.url()).lat).toBeCloseTo(20, 0)
+  const before = viewFromUrl(page.url())
+
+  // Antialiasing changes, so the canvas is rebuilt from scratch.
+  await page.evaluate(() => { window.__oldCanvas = document.querySelector('canvas') })
+  await page.getByRole('button', { name: 'Settings' }).first().click()
+  await page.getByRole('group', { name: 'Graphics quality' }).getByRole('button', { name: 'Battery saver' }).click()
+  await page.keyboard.press('Escape')
+  await expect.poll(() => page.evaluate(() => !window.__oldCanvas.isConnected)).toBe(true)
+  await expect(page.locator('canvas').first()).toBeVisible()
+
+  // Neither back to the start view nor a repeat of the last fly-to: a zoom
+  // step reports where the rebuilt camera is.
+  await page.keyboard.press('-')
+  await page.waitForTimeout(1_000)
+  const after = viewFromUrl(page.url())
+  expect(degreesApart(after.lon, before.lon), JSON.stringify({ before, after })).toBeLessThan(1)
+  expect(Math.abs(after.lat - before.lat), JSON.stringify({ before, after })).toBeLessThan(1)
+
+  expect(errors).toEqual([])
+})

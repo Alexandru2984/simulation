@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Stars } from '@react-three/drei'
 import * as THREE from 'three'
@@ -80,12 +80,26 @@ function CityPin({ registry, location }) {
 function Scene({
   apiRef, weatherData, gridData, previewData, overlayMode, flyTo, onGlobeClick, labels,
   onGlobeHover, onViewChange, onReady, profile, autoRotate, reducedMotion, tourActive,
+  cameraMemory,
 }) {
   const { camera, gl, scene, size } = useThree()
   const controlsRef = useRef()
   const homeDistanceRef = useRef(HOME_DISTANCE)
   const fittedRef = useRef(false)
   const flyTargetRef = useRef(null)
+
+  // The canvas is rebuilt when antialiasing changes (graphics quality). Pick
+  // up the previous canvas's camera and any flight in progress instead of
+  // starting over. A layout effect, so it runs before the first frame (which
+  // would overwrite the memory) and before the fitting effect below.
+  useLayoutEffect(() => {
+    const memory = cameraMemory.current
+    if (!memory.position) return
+    camera.position.copy(memory.position)
+    camera.lookAt(0, 0, 0)
+    flyTargetRef.current = memory.flyTarget?.clone() ?? null
+    fittedRef.current = true
+  }, [camera, cameraMemory])
   const lastInteractionRef = useRef(0)
   const stormsRef = useRef(gridData?.storms)
   const scratch = useMemo(() => ({
@@ -150,9 +164,13 @@ function Scene({
     },
   }), [camera, gl, scene, flyToPoint])
 
+  // Each request flies once, so a rebuilt canvas does not repeat the last one.
   useEffect(() => {
-    if (flyTo) flyToPoint(flyTo.lat, flyTo.lon, flyTo.distance)
-  }, [flyTo, flyToPoint])
+    const memory = cameraMemory.current
+    if (!flyTo || memory.flyTo === flyTo) return
+    memory.flyTo = flyTo
+    flyToPoint(flyTo.lat, flyTo.lon, flyTo.distance)
+  }, [flyTo, flyToPoint, cameraMemory])
 
   // Storm tour: the interval only restarts when the tour is toggled, so a new
   // grid frame every second no longer resets it back to the first storm.
@@ -173,6 +191,9 @@ function Scene({
   }, [tourActive, flyToPoint])
 
   useFrame((_, delta) => {
+    const memory = cameraMemory.current
+    memory.position = (memory.position ?? new THREE.Vector3()).copy(camera.position)
+    memory.flyTarget = flyTargetRef.current
     const controls = controlsRef.current
     const target = flyTargetRef.current
     if (controls) {
@@ -294,6 +315,8 @@ export default function WeatherGlobe({
 }) {
   const { t } = useI18n()
   const tooltipRef = useRef(null)
+  // Outlives the <Canvas>, which is rebuilt when antialiasing changes.
+  const cameraMemory = useRef({ position: null, flyTarget: null, flyTo: null })
   const gridRef = useRef(null)
   const prefsRef = useRef(prefs)
   const pendingRef = useRef(null)
@@ -390,6 +413,7 @@ export default function WeatherGlobe({
           autoRotate={autoRotate}
           reducedMotion={reducedMotion}
           tourActive={tourActive}
+          cameraMemory={cameraMemory}
         />
       </Canvas>
       <div className="globe-labels" aria-hidden="true">
