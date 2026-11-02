@@ -43,8 +43,12 @@ the HUD and the static splash screen in `index.html`.
 - `index.html` carries the title, description, canonical URL, Open Graph and
   Twitter cards, JSON-LD (`WebApplication`) and a static splash. The splash
   doubles as crawlable text and as the first paint before JavaScript runs.
-- The Earth textures are WebP (`public/textures/*.webp`). They are about four
-  times smaller than the old JPEGs at the same resolution.
+- The textures are WebP (`public/textures/*.webp`). The Earth maps are about
+  four times smaller than the old JPEGs at the same resolution. `clouds.webp`
+  is the cloud mask baked into one grayscale channel from the original RGBA
+  PNG (alpha, or luminance where a texel was opaque, which is exactly what the
+  cloud shader computed), lossy at Q80: 63 KB instead of 260 KB, mean error
+  under 1%.
 - `public/icons/*.png`, `public/apple-touch-icon.png` and `public/og-image.jpg`
   are generated from `favicon.svg` and from the running app by
   `scripts/render-assets.mjs`. See the header of that script for how to run

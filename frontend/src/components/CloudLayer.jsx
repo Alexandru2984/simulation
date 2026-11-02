@@ -27,9 +27,10 @@ const cloudFragmentShader = `
   void main() {
     vec4 cloud = texture2D(cloudTex, vec2(vUv.x + scroll, vUv.y));
     float density = texture2D(densityTex, vUv).r;
-    // The texture is white with an alpha mask; opaque grayscale images fall
-    // back to luminance. (max(alpha, luminance) made every white texel fully
-    // opaque, turning thin cloud into solid white blocks.)
+    // A white texture with an alpha mask uses the alpha; an opaque grayscale
+    // texture (the shipped clouds.webp) uses its luminance. (max(alpha,
+    // luminance) made every white texel fully opaque, turning thin cloud into
+    // solid white blocks.)
     float lum = dot(cloud.rgb, vec3(0.299, 0.587, 0.114));
     float pattern = cloud.a < 0.99 ? cloud.a : lum;
     float alpha = pattern * clamp(density, 0.0, 1.0) * cloudOpacity;
@@ -41,7 +42,9 @@ const cloudFragmentShader = `
 
 export default function CloudLayer({ gridData, animate = true }) {
   const meshRef = useRef()
-  const cloudTex = useLoader(TextureLoader, '/textures/clouds.png')
+  // Grayscale WebP: the cloud mask baked from the original RGBA texture
+  // (alpha, or luminance where it was opaque), 63 KB instead of 260 KB.
+  const cloudTex = useLoader(TextureLoader, '/textures/clouds.webp')
   const rows = gridData?.rows || 36
   const cols = gridData?.cols || 72
 
