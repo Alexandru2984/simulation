@@ -61,7 +61,7 @@ jobs:
         run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install backend dependencies
         run: scripts/ci/install-deps.sh
@@ -86,7 +86,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node
         uses: actions/setup-node@v4
