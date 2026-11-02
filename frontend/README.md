@@ -23,7 +23,8 @@ Node 22 or newer is required.
 | --- | --- |
 | `src/App.jsx` | Top-level state: sockets, overlay mode, placement, popups |
 | `src/components/` | Globe layers (`*Layer`, `*Particles`, `GridOverlay`) and HUD panels |
-| `src/hooks/` | Resilient WebSocket manager, FPS sampling |
+| `src/hooks/` | Resilient WebSocket manager, FPS sampling, preferences |
+| `src/i18n/` | Interface languages: dictionaries, plural-aware `translate`, React context |
 | `src/utils/` | Pure helpers (grid sampling, geo math, payload decoding) with tests |
 | `public/` | Static files served as-is (textures, icons, robots.txt, sitemap, manifest, 404 page, social preview) |
 | `scripts/` | Maintenance scripts that are not part of the build |
@@ -51,6 +52,31 @@ make frontend-build frontend-budget   # from the repository root
 ```
 
 The e2e suite adds a runtime budget in a real browser (`e2e/tests/perf.spec.js`).
+
+## Interface languages
+
+Every visible string is a key in `src/i18n/en.js`, with the same key in
+`src/i18n/ro.js`. Components read `t` from `useI18n()`; formatters and other
+code outside React use `t` and `getLanguage()` from `src/i18n/i18n.js`.
+
+- **Choice**: `prefs.lang` is `auto` (first supported language in
+  `navigator.languages`, else English), `en` or `ro`, set in Settings.
+  `<html lang>` and the document title follow it.
+- **Loading**: English is in the main bundle; other languages are lazy chunks.
+  Until one arrives the interface stays English, numbers included.
+- **Messages**: `{name}` placeholders, plural objects keyed by
+  `Intl.PluralRules` categories (Romanian needs `one`, `few` and `other`:
+  1 furtună, 3 furtuni, 20 de furtuni). Missing keys fall back to English.
+- **Numbers**: `formatNumber` in `utils/units.js` (decimal comma in Romanian,
+  never a thousands separator). Compass points and relative times are
+  dictionary entries too.
+- **API errors**: the backend's stable `error` codes map to `error.<code>`.
+
+`src/i18n/i18n.test.js` fails when a language is missing a key, has an extra
+one, changes a placeholder, leaves a text empty or skips a plural category.
+
+To add a language: copy `ro.js`, translate it, add it to `LANGUAGES` and
+`LOADERS` in `i18n.js`, and add a test for its plurals.
 
 ## Static assets and SEO
 

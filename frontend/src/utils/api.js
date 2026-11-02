@@ -1,33 +1,24 @@
-// Small fetch helpers that turn the backend's error contract into readable
-// messages. Rate-limit responses from nginx are HTML, so never assume JSON.
+import { t } from '../i18n/i18n.js'
 
-const MESSAGES = {
-  api_key_not_configured: 'Live weather is not configured on this server',
-  upstream_rate_limited: 'Live weather is busy — try again in a moment',
-  upstream_failed: 'Weather provider did not respond',
-  upstream_response_too_large: 'Weather provider sent an invalid response',
-  upstream_invalid_payload: 'Weather provider sent an invalid response',
-  invalid_query: 'Use letters, spaces, commas or hyphens',
-  invalid_lat_lon: 'Invalid coordinates',
-  lat_lon_out_of_range: 'Coordinates out of range',
-  out_of_range: 'That value is out of range',
-  invalid_json: 'The request was malformed',
-  invalid_type: 'The request was malformed',
-  missing_fields: 'The request was incomplete',
-  unknown_event_type: 'Unknown event type',
-  invalid_limit: 'Invalid history length',
-  rate_limited: 'Too many changes right now — try again shortly',
-  forbidden_origin: 'Request blocked by the server',
-  unsupported_media_type: 'Request blocked by the server',
-  unauthorized: 'This action is restricted on this server',
-}
+// Small fetch helpers that turn the backend's error contract into readable,
+// translated messages. A proxy in between may still answer with HTML, so
+// never assume JSON.
+
+// Backend error codes with a translation (src/i18n: error.<code>).
+const KNOWN_CODES = new Set([
+  'api_key_not_configured', 'upstream_rate_limited', 'upstream_failed',
+  'upstream_response_too_large', 'upstream_invalid_payload', 'invalid_query',
+  'invalid_lat_lon', 'lat_lon_out_of_range', 'out_of_range', 'invalid_json',
+  'invalid_type', 'missing_fields', 'unknown_event_type', 'invalid_limit',
+  'rate_limited', 'forbidden_origin', 'unsupported_media_type', 'unauthorized',
+])
 
 export function describeApiError(status, code) {
-  if (code && MESSAGES[code]) return MESSAGES[code]
-  if (status === 429) return 'Slow down — too many requests'
-  if (status === 403) return 'Request blocked by the server'
-  if (status >= 500) return 'Server error — try again shortly'
-  return 'Request failed'
+  if (code && KNOWN_CODES.has(code)) return t(`error.${code}`)
+  if (status === 429) return t('error.tooManyRequests')
+  if (status === 403) return t('error.blocked')
+  if (status >= 500) return t('error.server')
+  return t('error.failed')
 }
 
 export async function apiErrorMessage(res) {
@@ -56,6 +47,6 @@ export async function postJson(url, body, { signal } = {}) {
     return { ok: true, data }
   } catch (err) {
     if (err?.name === 'AbortError') return { ok: false, aborted: true }
-    return { ok: false, error: 'Network error — check your connection' }
+    return { ok: false, error: t('error.network') }
   }
 }

@@ -1,3 +1,5 @@
+import { t } from '../i18n/i18n.js'
+
 const FRONT_DETECTION_THRESHOLD = 2.5
 const STRONG_FRONT_REFERENCE = 6.5
 
@@ -12,10 +14,10 @@ export function normalizeFrontIntensity(value) {
 // The simulation does not calculate the sustained wind measurements required
 // by operational tropical-cyclone scales.
 export function pressureAnomalyLabel(anomaly) {
-  if (!Number.isFinite(anomaly)) return 'Pressure low'
+  if (!Number.isFinite(anomaly)) return t('storm.low')
   const depth = Math.max(0, -anomaly)
-  if (depth >= 20) return 'Exceptional low'
-  if (depth >= 15) return 'Very deep low'
-  if (depth >= 10) return 'Deep low'
-  return 'Pressure low'
+  if (depth >= 20) return t('storm.exceptional')
+  if (depth >= 15) return t('storm.veryDeep')
+  if (depth >= 10) return t('storm.deep')
+  return t('storm.low')
 }

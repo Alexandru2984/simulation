@@ -573,6 +573,7 @@ a { color: var(--sky); }
 .popup__icon { font-size: 1.9rem; line-height: 1; }
 .popup__name { margin: 0; font-size: 1.08rem; font-weight: 700; color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .popup__meta { color: var(--text-faint); font-size: 0.74rem; }
+.popup__sky::first-letter { text-transform: uppercase; }
 .compare { width: 100%; border-collapse: collapse; font-size: 0.86rem; font-variant-numeric: tabular-nums; }
 .compare th { color: var(--text-faint); font-weight: 600; font-size: 0.66rem; letter-spacing: 0.07em; text-transform: uppercase; text-align: right; padding: 0 0 6px; }
 .compare th:first-child { text-align: left; }

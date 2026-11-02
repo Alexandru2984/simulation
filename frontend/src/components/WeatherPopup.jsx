@@ -3,9 +3,10 @@ import { EVENTS } from '../constants'
 import { apiErrorMessage } from '../utils/api'
 import { sampleGrid } from '../utils/geoUtils'
 import {
-  compassPoint, formatLatLon, formatPercent, formatPressure, formatTemperature,
+  compassPoint, formatLatLon, formatNumber, formatPercent, formatPressure, formatTemperature,
   formatWind, windFromComponents,
 } from '../utils/units'
+import { useI18n } from '../i18n/react'
 
 function conditionIcon(code) {
   if (!code) return '🌍'
@@ -18,6 +19,20 @@ function conditionIcon(code) {
   if (code === 801) return '🌤️'
   if (code <= 803) return '⛅'
   return '☁️'
+}
+
+// OpenWeatherMap condition groups, for languages its English text can't serve.
+function skyKey(code) {
+  if (!code) return null
+  if (code >= 200 && code < 300) return 'sky.thunderstorm'
+  if (code >= 300 && code < 400) return 'sky.drizzle'
+  if (code >= 500 && code < 600) return 'sky.rain'
+  if (code >= 600 && code < 700) return 'sky.snow'
+  if (code >= 700 && code < 800) return 'sky.fog'
+  if (code === 800) return 'sky.clear'
+  if (code === 801) return 'sky.fewClouds'
+  if (code <= 803) return 'sky.clouds'
+  return 'sky.overcast'
 }
 
 function simulatedAt(grid, lat, lon) {
@@ -35,6 +50,7 @@ function simulatedAt(grid, lat, lon) {
 }
 
 export default function WeatherPopup({ lat, lon, grid, prefs, onClose, onInject }) {
+  const { lang, t } = useI18n()
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -54,13 +70,13 @@ export default function WeatherPopup({ lat, lon, grid, prefs, onClose, onInject 
       })
       .then(d => setData(d))
       .catch(err => {
-        if (err.name !== 'AbortError') setError(err.message || 'Network error')
+        if (err.name !== 'AbortError') setError(err.message || t('error.network'))
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
-  }, [lat, lon])
+  }, [lat, lon, t])
 
   useEffect(() => {
     closeRef.current?.focus({ preventScroll: true })
@@ -79,17 +95,19 @@ export default function WeatherPopup({ lat, lon, grid, prefs, onClose, onInject 
     windFrom: data.wind?.deg,
   } : null
 
-  const t = prefs.tempUnit
+  const tUnit = prefs.tempUnit
   const w = prefs.windUnit
   const rows = [
-    ['Temperature', obs && formatTemperature(obs.temp, t), sim && formatTemperature(sim.temp, t)],
-    ['Pressure', obs && formatPressure(obs.pressure), sim && formatPressure(sim.pressure)],
-    ['Humidity', obs && formatPercent(obs.humidity), sim && formatPercent(sim.humidity)],
-    ['Wind', obs && `${formatWind(obs.windSpeed, w)} ${compassPoint(obs.windFrom)}`,
+    ['temperature', obs && formatTemperature(obs.temp, tUnit), sim && formatTemperature(sim.temp, tUnit)],
+    ['pressure', obs && formatPressure(obs.pressure), sim && formatPressure(sim.pressure)],
+    ['humidity', obs && formatPercent(obs.humidity), sim && formatPercent(sim.humidity)],
+    ['wind', obs && `${formatWind(obs.windSpeed, w)} ${compassPoint(obs.windFrom)}`,
       sim && `${formatWind(sim.windSpeed, w)} ${compassPoint(sim.windFrom)}`],
   ]
 
-  const title = data?.name || (loading ? 'Loading…' : 'Open ocean')
+  const title = data?.name || (loading ? t('popup.loading') : t('popup.ocean'))
+  const condition = data?.weather?.[0]
+  const sky = lang === 'en' ? condition?.description : (skyKey(condition?.id) && t(skyKey(condition.id)))
 
   return (
     <>
@@ -103,45 +121,45 @@ export default function WeatherPopup({ lat, lon, grid, prefs, onClose, onInject 
               <div className="popup__meta">
                 {[data?.sys?.country, formatLatLon(lat, lon, 2)].filter(Boolean).join(' · ')}
               </div>
-              {data?.weather?.[0]?.description && (
-                <div className="popup__meta" style={{ textTransform: 'capitalize' }}>
-                  {data.weather[0].description}
-                  {Number.isFinite(obs?.feels) && ` · feels ${formatTemperature(obs.feels, t, 0)}`}
+              {sky && (
+                <div className="popup__meta popup__sky">
+                  {sky}
+                  {Number.isFinite(obs?.feels) && ` · ${t('popup.feels', { temp: formatTemperature(obs.feels, tUnit, 0) })}`}
                 </div>
               )}
             </div>
           </div>
           <button ref={closeRef} type="button" className="btn btn--icon btn--ghost"
-            onClick={onClose} aria-label="Close weather details">✕</button>
+            onClick={onClose} aria-label={t('popup.close')}>✕</button>
         </div>
 
         {error && <p className="error-text" role="alert">⚠ {error}</p>}
 
         <table className="compare">
           <thead>
-            <tr><th scope="col">Now</th><th scope="col">Observed</th><th scope="col">Simulated</th></tr>
+            <tr><th scope="col">{t('popup.now')}</th><th scope="col">{t('popup.observed')}</th><th scope="col">{t('popup.simulated')}</th></tr>
           </thead>
           <tbody>
-            {rows.map(([label, observed, simulated]) => (
-              <tr key={label}>
-                <td>{label}</td>
+            {rows.map(([quantity, observed, simulated]) => (
+              <tr key={quantity}>
+                <td>{t(`quantity.${quantity}`)}</td>
                 <td>{observed || (loading ? '…' : '—')}</td>
                 <td className="sim">{simulated || '—'}</td>
               </tr>
             ))}
             {Number.isFinite(data?.visibility) && (
-              <tr><td>Visibility</td><td>{(data.visibility / 1000).toFixed(1)} km</td><td className="sim">—</td></tr>
+              <tr><td>{t('quantity.visibility')}</td><td>{formatNumber(data.visibility / 1000, 1)} km</td><td className="sim">—</td></tr>
             )}
           </tbody>
         </table>
 
         {onInject && (
-          <div className="popup__foot" role="group" aria-label="Inject an event at this location">
-            <span>Inject here</span>
+          <div className="popup__foot" role="group" aria-label={t('popup.injectGroup')}>
+            <span>{t('popup.injectHere')}</span>
             <div className="segmented">
               {EVENTS.map(ev => (
-                <button key={ev.id} type="button" className="btn btn--sm" title={ev.label}
-                  aria-label={`Inject ${ev.label.toLowerCase()} here`}
+                <button key={ev.id} type="button" className="btn btn--sm" title={t(`event.${ev.id}`)}
+                  aria-label={t('popup.injectEvent', { event: t(`event.${ev.id}`).toLocaleLowerCase() })}
                   style={{ '--tone': ev.tone }} onClick={() => onInject(ev.id)}>
                   {ev.icon}
                 </button>
@@ -150,8 +168,8 @@ export default function WeatherPopup({ lat, lon, grid, prefs, onClose, onInject 
           </div>
         )}
         <div className="popup__foot">
-          <span>Observed · OpenWeatherMap</span>
-          <span style={{ color: 'var(--violet)' }}>Simulated · this model</span>
+          <span>{t('popup.sourceObserved')}</span>
+          <span style={{ color: 'var(--violet)' }}>{t('popup.sourceSimulated')}</span>
         </div>
       </section>
     </>

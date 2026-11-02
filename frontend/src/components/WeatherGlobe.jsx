@@ -17,9 +17,11 @@ import LightningEffect from './LightningEffect'
 import GlobeLabel, { LabelProjector } from './GlobeLabel'
 import { latLonToVec3, sampleGrid, vec3ToLatLon } from '../utils/geoUtils'
 import {
-  compassPoint, formatLatLon, formatPercent, formatPressure, formatTemperature, formatWind,
+  compassPoint, formatLatLon, formatNumber, formatPercent, formatPressure, formatTemperature, formatWind,
   windFromComponents,
 } from '../utils/units'
+import { t as translateNow } from '../i18n/i18n.js'
+import { useI18n } from '../i18n/react'
 
 const MIN_DISTANCE = 2.6
 const MAX_DISTANCE = 9
@@ -290,6 +292,7 @@ export default function WeatherGlobe({
   onViewChange, onReady, initialView, quality = 'auto', layout = 'desktop', autoRotate = true,
   reducedMotion = false, tourActive = false, prefs,
 }) {
+  const { t } = useI18n()
   const tooltipRef = useRef(null)
   const gridRef = useRef(null)
   const prefsRef = useRef(prefs)
@@ -326,12 +329,17 @@ export default function WeatherGlobe({
     const R = sample(g?.R)
     const wind = windFromComponents(sample(g?.U) ?? 0, sample(g?.V) ?? 0)
 
+    // Runs outside render, so it reads the active language directly.
+    const tr = translateNow
+    const windText = g?.U
+      ? tr('tooltip.windFrom', { speed: formatWind(wind.speed, p.windUnit), direction: compassPoint(wind.fromDegrees) })
+      : '—'
     fillTooltip(el, [
-      ['Temperature', formatTemperature(T, p.tempUnit), '#f97316'],
-      ['Pressure', formatPressure(P, 1), '#60a5fa'],
-      ['Wind', g?.U ? `${formatWind(wind.speed, p.windUnit)} from ${compassPoint(wind.fromDegrees)}` : '—', '#38bdf8'],
-      ['Humidity', formatPercent(H), '#34d399'],
-      ['Precipitation', Number.isFinite(R) ? `${Math.max(0, R).toFixed(1)} mm/h` : '—', '#818cf8'],
+      [tr('quantity.temperature'), formatTemperature(T, p.tempUnit), '#f97316'],
+      [tr('quantity.pressure'), formatPressure(P, 1), '#60a5fa'],
+      [tr('quantity.wind'), windText, '#38bdf8'],
+      [tr('quantity.humidity'), formatPercent(H), '#34d399'],
+      [tr('quantity.precipitation'), Number.isFinite(R) ? `${formatNumber(Math.max(0, R), 1)} mm/h` : '—', '#818cf8'],
     ], formatLatLon(lat, lon, 1))
 
     el.style.display = 'block'
@@ -364,7 +372,7 @@ export default function WeatherGlobe({
         gl={{ antialias: profile.antialias, alpha: false, powerPreference: 'high-performance' }}
         onCreated={({ gl }) => gl.setClearColor('#030711')}
         role="region"
-        aria-label="Interactive 3D globe. Drag to rotate, scroll or pinch to zoom, click a location for its weather."
+        aria-label={t('globe.description')}
       >
         <Scene
           apiRef={apiRef}

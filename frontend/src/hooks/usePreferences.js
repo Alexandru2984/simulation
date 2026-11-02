@@ -1,11 +1,14 @@
 import { useCallback, useState } from 'react'
 import { TEMPERATURE_UNITS, WIND_UNITS } from '../utils/units'
+import { isLanguage } from '../i18n/i18n.js'
 
 const STORAGE_KEY = 'weather-sim:prefs:v1'
 
 export const QUALITY_LEVELS = ['auto', 'low', 'high']
 
 const DEFAULTS = {
+  // 'auto' follows the browser; otherwise a supported language id.
+  lang: 'auto',
   tempUnit: 'c',
   windUnit: 'ms',
   quality: 'auto',
@@ -17,6 +20,7 @@ const DEFAULTS = {
 function sanitize(raw) {
   const prefs = { ...DEFAULTS }
   if (!raw || typeof raw !== 'object') return prefs
+  if (isLanguage(raw.lang)) prefs.lang = raw.lang
   if (Object.hasOwn(TEMPERATURE_UNITS, raw.tempUnit)) prefs.tempUnit = raw.tempUnit
   if (Object.hasOwn(WIND_UNITS, raw.windUnit)) prefs.windUnit = raw.windUnit
   if (QUALITY_LEVELS.includes(raw.quality)) prefs.quality = raw.quality

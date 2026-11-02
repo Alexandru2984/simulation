@@ -9,6 +9,7 @@ import { buildViewHash, parseViewHash } from './utils/viewState'
 import { formatLatLon } from './utils/units'
 import { hasWebGL } from './utils/webgl'
 import { EVENT_BY_ID, LAYERS } from './constants'
+import { I18nProvider, useLanguage } from './i18n/react'
 import ErrorBoundary from './components/ErrorBoundary'
 import Splash from './components/Splash'
 import WeatherHUD from './components/WeatherHUD'
@@ -60,6 +61,8 @@ export default function App() {
   const isMobile = layout === 'mobile'
   const reducedMotion = useReducedMotion()
   const [prefs, updatePrefs] = usePreferences()
+  const i18n = useLanguage(prefs.lang)
+  const { t } = i18n
   const { toasts, notify } = useToasts()
   const fullscreen = useFullscreen()
 
@@ -138,13 +141,14 @@ export default function App() {
     const meta = EVENT_BY_ID[type]
     if (!meta) return
     const res = await postJson('/api/grid/inject', { type, lat, lon, intensity })
+    const event = t(`event.${type}`)
     if (res.ok) {
-      notify(`${meta.icon} ${meta.label} injected at ${formatLatLon(lat, lon, 1)}`, 'event')
+      notify(t('toast.injected', { icon: meta.icon, event, place: formatLatLon(lat, lon, 1) }), 'event')
       setFlyTo({ lat, lon })
     } else if (!res.aborted) {
-      notify(`Could not inject ${meta.label.toLowerCase()}: ${res.error}`, 'error')
+      notify(t('toast.injectFailed', { event: event.toLocaleLowerCase(), error: res.error }), 'error')
     }
-  }, [intensity, notify])
+  }, [intensity, notify, t])
 
   const handleSeed = useCallback(async (lat, lon, name) => {
     setFlyTo({ lat, lon })
@@ -153,8 +157,8 @@ export default function App() {
     setSeeding(true)
     const res = await postJson('/api/weather/seed', { lat, lon })
     setSeeding(false)
-    if (!res.ok && !res.aborted) notify(`Live weather unavailable: ${res.error}`, 'warning')
-  }, [notify])
+    if (!res.ok && !res.aborted) notify(t('toast.seedFailed', { error: res.error }), 'warning')
+  }, [notify, t])
 
   const handleSearchSelect = useCallback((lat, lon, name) => {
     handleSeed(lat, lon, name)
@@ -178,12 +182,12 @@ export default function App() {
     const res = await postJson('/api/weather/speed', { value })
     if (!res.ok) {
       setPendingSpeed(null)
-      if (!res.aborted) notify(`Speed unchanged: ${res.error}`, 'error')
+      if (!res.aborted) notify(t('toast.speedFailed', { error: res.error }), 'error')
       return
     }
     // Hold the optimistic value until the next grid frame carries it.
     speedTimer.current = setTimeout(() => setPendingSpeed(null), 1500)
-  }, [notify])
+  }, [notify, t])
 
   const startPlacement = useCallback(type => {
     setPlacementMode(type)
@@ -203,7 +207,7 @@ export default function App() {
     const url = `${window.location.origin}${window.location.pathname}${buildViewHash({ ...view, layer: overlayMode })}`
     if (navigator.share && isMobile) {
       try {
-        await navigator.share({ title: document.title, text: 'Live weather simulation', url })
+        await navigator.share({ title: document.title, text: t('share.text'), url })
         return
       } catch (err) {
         if (err?.name === 'AbortError') return
@@ -211,15 +215,15 @@ export default function App() {
     }
     try {
       await navigator.clipboard.writeText(url)
-      notify('🔗 Link to this view copied', 'info')
+      notify(t('toast.linkCopied'), 'info')
     } catch {
-      window.prompt('Copy this link', url)
+      window.prompt(t('share.prompt'), url)
     }
-  }, [view, overlayMode, isMobile, notify])
+  }, [view, overlayMode, isMobile, notify, t])
 
   const screenshot = useCallback(() => {
-    if (!globeApi.current?.screenshot()) notify('Screenshot is not available yet', 'warning')
-  }, [notify])
+    if (!globeApi.current?.screenshot()) notify(t('toast.screenshotUnavailable'), 'warning')
+  }, [notify, t])
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────
   const keyActions = useRef(null)
@@ -282,11 +286,11 @@ export default function App() {
   // ── Render ──────────────────────────────────────────────────────────────
   const placing = placementMode ? EVENT_BY_ID[placementMode] : null
   const connectionNotice = status === 'offline'
-    ? 'You are offline — reconnecting when the network returns'
+    ? t('banner.offline')
     : status === 'full'
-      ? 'The simulation is full right now — you will join automatically as soon as a spot frees up'
+      ? t('banner.full')
       : status === 'reconnecting' || status === 'stale'
-        ? 'Connection interrupted — reconnecting…'
+        ? t('banner.reconnecting')
         : null
 
   const sharedHud = {
@@ -301,13 +305,14 @@ export default function App() {
   }
 
   return (
+    <I18nProvider value={i18n}>
     <div className="app" data-placing={Boolean(placementMode)}>
-      <main className="globe-layer" aria-label="Weather globe">
+      <main className="globe-layer" aria-label={t('app.globeRegion')}>
         {webgl ? (
           <ErrorBoundary fallback={() => (
-            <GlobeFallback title="The 3D globe stopped working"
-              message="Your graphics driver may have reset. Reloading usually fixes it."
-              action={<button type="button" className="btn btn--primary" onClick={() => window.location.reload()}>Reload</button>} />
+            <GlobeFallback title={t('globe.crashedTitle')}
+              message={t('globe.crashedMessage')}
+              action={<button type="button" className="btn btn--primary" onClick={() => window.location.reload()}>{t('globe.reload')}</button>} />
           )}>
             <Suspense fallback={null}>
               <WeatherGlobe
@@ -332,8 +337,7 @@ export default function App() {
             </Suspense>
           </ErrorBoundary>
         ) : (
-          <GlobeFallback title="3D view unavailable"
-            message="This browser or device has WebGL 2 turned off, so the globe can’t be drawn. Search, live statistics and forecasts still work." />
+          <GlobeFallback title={t('globe.unavailableTitle')} message={t('globe.unavailableMessage')} />
         )}
       </main>
 
@@ -384,15 +388,15 @@ export default function App() {
       {connectionNotice && <div className="banner banner--warn" role="status">{connectionNotice}</div>}
       {!connectionNotice && previewSnap && !timeOpen && (
         <div className="banner banner--preview" role="status">
-          Previewing step {previewSnap.step ?? '—'}
-          <button type="button" className="btn btn--sm" onClick={goLive}>● Live</button>
+          {t('banner.preview', { step: previewSnap.step ?? '—' })}
+          <button type="button" className="btn btn--sm" onClick={goLive}>{t('banner.live')}</button>
         </div>
       )}
 
       {placing && (
         <div className="placement-banner" role="status" style={{ '--tone': placing.tone }}>
-          <span>{placing.icon} {isMobile ? 'Tap' : 'Click'} the globe to place a {placing.label.toLowerCase()}</span>
-          <button type="button" className="btn btn--sm" onClick={() => setPlacementMode(null)}>Cancel</button>
+          <span>{placing.icon} {t(isMobile ? 'placement.tap' : 'placement.click', { event: t(`event.${placementMode}`).toLocaleLowerCase() })}</span>
+          <button type="button" className="btn btn--sm" onClick={() => setPlacementMode(null)}>{t('common.cancel')}</button>
         </div>
       )}
 
@@ -416,12 +420,13 @@ export default function App() {
       </Suspense>
 
       <div className="toasts" role="status" aria-live="polite">
-        {toasts.map(t => (
-          <div key={t.id} className="toast" style={{ '--tone': t.color }}>{t.message}</div>
+        {toasts.map(toast => (
+          <div key={toast.id} className="toast" style={{ '--tone': toast.color }}>{toast.message}</div>
         ))}
       </div>
 
       <Splash hidden={globeReady || splashTimedOut || !webgl} />
     </div>
+    </I18nProvider>
   )
 }

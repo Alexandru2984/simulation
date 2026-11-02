@@ -39,6 +39,12 @@ export default defineConfig({
       testMatch: /perf\.spec\.js/,
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
     },
+    // Romanian interface: a Romanian browser and the language setting.
+    {
+      name: 'i18n',
+      testMatch: /i18n\.spec\.js/,
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 }, locale: 'ro-RO' },
+    },
     // Accessibility (axe-core, WCAG 2.1 AA); sets its own viewports.
     { name: 'a11y', testMatch: /a11y\.spec\.js/, use: { ...devices['Desktop Chrome'] } },
   ],

@@ -21,9 +21,9 @@ function interpolate(stops, value) {
   return stops[stops.length - 1][1]
 }
 
+// Titles for people are in the dictionaries: t(`scale.${id}`).
 export const SCALES = {
   temp: {
-    title: 'Temperature',
     quantity: 'temperature',
     min: -60, max: 50,
     stops: [
@@ -34,7 +34,6 @@ export const SCALES = {
     ticks: [-40, -20, 0, 20, 40],
   },
   pressure: {
-    title: 'Pressure',
     unit: 'hPa',
     min: 980, max: 1040,
     stops: [[980, [0, 0, 255]], [1010, [255, 255, 255]], [1040, [255, 0, 0]]],
@@ -42,7 +41,6 @@ export const SCALES = {
     ticks: [980, 995, 1010, 1025, 1040],
   },
   humidity: {
-    title: 'Humidity',
     unit: '%',
     min: 0, max: 1,
     stops: [[0, [255, 255, 80]], [1, [51, 153, 255]]],
@@ -51,7 +49,6 @@ export const SCALES = {
     format: v => `${Math.round(v * 100)}`,
   },
   precip: {
-    title: 'Precipitation',
     unit: 'mm/h',
     min: 0, max: 20,
     stops: [[0, [30, 100, 255]], [20, [230, 255, 255]]],
@@ -59,7 +56,6 @@ export const SCALES = {
     ticks: [0, 5, 10, 15, 20],
   },
   storm: {
-    title: 'Storm potential',
     unit: 'index',
     min: 0, max: 50,
     stops: [[0, [0, 0, 0]], [10, [204, 204, 0]], [25, [255, 128, 0]], [50, [255, 0, 0]]],

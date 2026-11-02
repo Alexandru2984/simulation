@@ -1,67 +1,61 @@
 import Dialog from './Dialog'
 import { LAYERS } from '../constants'
+import { useI18n } from '../i18n/react'
 
+// [keys, help.key.<id>]
 const SHORTCUTS = [
-  [['1', '–', '7'], 'Switch map layer'],
-  [['/'], 'Search for a city'],
-  [['E'], 'Open the event injector'],
-  [['T'], 'Start or stop the storm tour'],
-  [['R'], 'Reset the camera'],
-  [['+', '−'], 'Zoom in / out'],
-  [['F'], 'Toggle fullscreen'],
-  [['S'], 'Save a screenshot'],
-  [['L'], 'Return to the live simulation'],
-  [['Esc'], 'Close panels or cancel placement'],
-  [['?'], 'Show this help'],
+  [['1', '–', '7'], 'layer'],
+  [['/'], 'search'],
+  [['E'], 'events'],
+  [['T'], 'tour'],
+  [['R'], 'reset'],
+  [['+', '−'], 'zoom'],
+  [['F'], 'fullscreen'],
+  [['S'], 'screenshot'],
+  [['L'], 'live'],
+  [['Esc'], 'escape'],
+  [['?'], 'help'],
 ]
 
+const DRIVERS = ['sun', 'wind', 'heat', 'obs', 'storm']
+
 export default function HelpDialog({ onClose }) {
+  const { t } = useI18n()
+  // Split around {link} so the link stays a real element in any language.
+  const [beforeLink, afterLink = ''] = t('help.privacy', { link: '\u0000' }).split('\u0000')
   return (
-    <Dialog title="About this simulation" onClose={onClose}>
-      <p>
-        A shared, real-time model of Earth&apos;s atmosphere. A C++ engine integrates
-        temperature, pressure, wind and humidity on a 36 × 72 global grid (5° cells)
-        ten times per second, and every visitor sees — and can change — the same world.
-      </p>
+    <Dialog title={t('help.title')} onClose={onClose}>
+      <p>{t('help.intro')}</p>
 
-      <h3>What drives it</h3>
+      <h3>{t('help.drivesHeading')}</h3>
       <ul>
-        <li><strong>Sunlight</strong> heats the day side using the real UTC day/night terminator.</li>
-        <li><strong>Pressure gradients and the Coriolis force</strong> set the winds.</li>
-        <li><strong>Advection, diffusion and latent heat</strong> move and release energy.</li>
-        <li><strong>Live observations</strong> from 20 cities nudge the model every 5 minutes.</li>
-        <li><strong>Storms</strong> are detected as deep local pressure minima with strong winds.</li>
+        {DRIVERS.map(id => (
+          <li key={id}><strong>{t(`help.${id}Title`)}</strong> {t(`help.${id}Text`)}</li>
+        ))}
       </ul>
 
-      <h3>Things to try</h3>
+      <h3>{t('help.tryHeading')}</h3>
       <ul>
-        <li>Click anywhere on the globe to compare live observed weather with the simulation.</li>
-        <li>Inject a cyclone or heat dome and watch the grid respond.</li>
-        <li>Run a forecast, or replay recent history from the Time Navigator.</li>
-        <li>Share the current view — the link keeps the location and layer.</li>
+        {[1, 2, 3, 4].map(n => <li key={n}>{t(`help.try${n}`)}</li>)}
       </ul>
 
-      <h3>Keyboard shortcuts</h3>
+      <h3>{t('help.keysHeading')}</h3>
       <div className="shortcuts">
-        {SHORTCUTS.map(([keys, label]) => (
-          <div key={label} style={{ display: 'contents' }}>
+        {SHORTCUTS.map(([keys, id]) => (
+          <div key={id} style={{ display: 'contents' }}>
             <span>{keys.map(k => k === '–' ? ' – ' : <kbd key={k} className="kbd">{k}</kbd>)}</span>
-            <span>{label}</span>
+            <span>{t(`help.key.${id}`)}</span>
           </div>
         ))}
       </div>
       <p className="muted" style={{ marginTop: 14 }}>
-        Layers: {LAYERS.map(l => `${l.key} ${l.label}`).join(' · ')}
+        {t('help.layers', { list: LAYERS.map(l => `${l.key} ${t(`layer.${l.id}`)}`).join(' · ') })}
       </p>
 
-      <h3>Fine print</h3>
+      <h3>{t('help.finePrintHeading')}</h3>
+      <p>{t('help.finePrint')}</p>
       <p>
-        This is an educational simulation, not a forecast — use an official weather
-        service for real-world decisions. Observations by OpenWeatherMap; Earth imagery
-        and borders from public-domain datasets.
-      </p>
-      <p>
-        No accounts, ads or tracking cookies. Read the <a href="/privacy">privacy notice</a>.
+        {beforeLink}<a href="/privacy">{t('help.privacyLink')}</a>{afterLink}
       </p>
     </Dialog>
   )

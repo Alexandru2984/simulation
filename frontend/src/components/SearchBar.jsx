@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useId, useImperativeHandle, useRef, useState } from 'react'
 import { apiErrorMessage } from '../utils/api'
+import { formatNumber } from '../utils/units'
+import { useI18n } from '../i18n/react'
 
 // React 19: `ref` is a regular prop for function components.
 export default function SearchBar({ onSelect, autoFocus = false, ref }) {
+  const { t } = useI18n()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
@@ -48,18 +51,18 @@ export default function SearchBar({ onSelect, autoFocus = false, ref }) {
       const list = Array.isArray(data) ? data.filter(d =>
         typeof d?.name === 'string' && Number.isFinite(d.lat) && Number.isFinite(d.lon)) : []
       setResults(list)
-      setMessage(list.length ? '' : 'No places found')
+      setMessage(list.length ? '' : t('search.none'))
       setActiveIdx(list.length ? 0 : -1)
       setOpen(true)
     } catch (err) {
       if (err.name === 'AbortError') return
       setResults([])
-      setMessage(err.message || 'Search failed')
+      setMessage(err.message || t('search.failed'))
       setOpen(true)
     } finally {
       if (abortRef.current === controller) setLoading(false)
     }
-  }, [])
+  }, [t])
 
   const handleChange = useCallback((e) => {
     const value = e.target.value
@@ -120,7 +123,7 @@ export default function SearchBar({ onSelect, autoFocus = false, ref }) {
     <div ref={wrapRef} className="search" role="search">
       <div className="search__field">
         <span aria-hidden="true">🔍</span>
-        <label className="sr-only" htmlFor={`${listId}-input`}>Search for a city</label>
+        <label className="sr-only" htmlFor={`${listId}-input`}>{t('search.label')}</label>
         <input
           id={`${listId}-input`}
           ref={inputRef}
@@ -130,7 +133,7 @@ export default function SearchBar({ onSelect, autoFocus = false, ref }) {
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           onFocus={() => (results.length > 0 || message) && setOpen(true)}
-          placeholder="Search any city…"
+          placeholder={t('search.placeholder')}
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
@@ -149,13 +152,13 @@ export default function SearchBar({ onSelect, autoFocus = false, ref }) {
             type="button"
             className="btn btn--ghost btn--sm"
             onClick={() => { setQuery(''); reset(); inputRef.current?.focus() }}
-            aria-label="Clear search"
+            aria-label={t('search.clear')}
           >✕</button>
         )}
       </div>
 
       {showList && (
-        <ul id={listId} className="search__results" role="listbox" aria-label="Search results">
+        <ul id={listId} className="search__results" role="listbox" aria-label={t('search.results')}>
           {results.map((r, i) => (
             <li
               key={`${r.name}-${r.lat}-${r.lon}`}
@@ -169,7 +172,7 @@ export default function SearchBar({ onSelect, autoFocus = false, ref }) {
             >
               <span className="search__option-name">{r.name}</span>
               <span className="search__option-meta">
-                {[r.state, r.country].filter(Boolean).join(', ')} · {r.lat.toFixed(2)}°, {r.lon.toFixed(2)}°
+                {[r.state, r.country].filter(Boolean).join(', ')} · {formatNumber(r.lat, 2)}°, {formatNumber(r.lon, 2)}°
               </span>
             </li>
           ))}

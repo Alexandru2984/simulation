@@ -23,6 +23,7 @@ system nginx and fails if the vhost gains a directive it cannot rewrite.
 | `desktop` | Boot without console errors on one compressed `GSB2` stream, layer shortcuts and share links, live vs simulated popup, cyclone injection reaching the shared feed, help dialog and search focus, anonymous error reporting |
 | `mobile` | Bottom sheet, no horizontal overflow, city search to popup |
 | `perf` | Runtime budget: bytes and requests for a first visit, a repeat visit served from cache, no third-party requests, layout shift, stream bandwidth, and a splash that paints without JavaScript. Paint and boot times are logged, not gated (software WebGL in CI) |
+| `i18n` | A Romanian browser (`ro-RO`) gets the Romanian interface, number format and translated API errors; the language setting applies at once and survives a reload |
 | `a11y` | axe-core WCAG 2.1 A/AA and best-practice rules on the HUD, dialogs, panels, popup, phone layout, privacy notice and 404 page; the layer picker's arrow-key model |
 
 All tests share one simulation, so they run serially.

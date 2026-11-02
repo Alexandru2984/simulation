@@ -9,10 +9,11 @@ export function watchErrors(page) {
 }
 
 // Opens the app and waits until the live stream is connected and the 3D
-// globe is on screen (not the no-WebGL fallback).
-export async function openApp(page, hash = '') {
+// globe is on screen (not the no-WebGL fallback). `title` is the document
+// title to expect, for runs in another interface language.
+export async function openApp(page, hash = '', { title = /Weather Simulation/ } = {}) {
   await page.goto(`/${hash}`)
-  await expect(page).toHaveTitle(/Weather Simulation/)
+  await expect(page).toHaveTitle(title)
   await expect(page.locator('.splash')).toHaveClass(/is-hidden/, { timeout: 45_000 })
   await expect(page.locator('.globe-fallback')).toHaveCount(0)
   await expect(page.locator('canvas').first()).toBeVisible()

@@ -1,6 +1,6 @@
 import GlobeLabel from './GlobeLabel'
 import { pressureAnomalyLabel } from '../utils/weatherFeatures'
-import { formatWind } from '../utils/units'
+import { formatPressure, formatWind } from '../utils/units'
 
 export default function StormLabels({ registry, storms = [], windUnit = 'ms' }) {
   if (!storms?.length) return null
@@ -13,7 +13,7 @@ export default function StormLabels({ registry, storms = [], windUnit = 'ms' }) 
         <span aria-hidden="true">🌀</span>
         <span>
           <strong>{pressureAnomalyLabel(storm.anom)}</strong>
-          <small>{Number.isFinite(storm.P) ? `${storm.P.toFixed(0)} hPa` : '—'} · {formatWind(storm.wind, windUnit, 0)}</small>
+          <small>{formatPressure(storm.P, 0)} · {formatWind(storm.wind, windUnit, 0)}</small>
         </span>
       </GlobeLabel>
     )

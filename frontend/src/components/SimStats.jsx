@@ -3,6 +3,7 @@ import { useFPS } from '../hooks/useFPS'
 import { ArcGauge } from './ArcGauge'
 import EventFeed from './EventFeed'
 import { convertTemperature, formatTemperature, formatWind, TEMPERATURE_UNITS, WIND_UNITS } from '../utils/units'
+import { useI18n } from '../i18n/react'
 
 function Sparkline({ history, color, w = 64, h = 22 }) {
   if (!history || history.length < 2) return <div style={{ height: h, width: w }} aria-hidden="true" />
@@ -37,6 +38,7 @@ function useGridHistory(gridData, length = 60) {
 }
 
 export default function SimStats({ gridData, weatherData, prefs, onFocus }) {
+  const { lang, t } = useI18n()
   const history = useGridHistory(gridData)
   const fps = useFPS()
   if (!gridData) return null
@@ -47,31 +49,31 @@ export default function SimStats({ gridData, weatherData, prefs, onFocus }) {
   const wUnit = WIND_UNITS[prefs.windUnit] ?? WIND_UNITS.ms
 
   return (
-    <section className="dock-bottom-left glass panel" aria-label="Simulation statistics">
-      <h2 className="eyebrow">📊 Sim stats</h2>
+    <section className="dock-bottom-left glass panel" aria-label={t('stats.label')}>
+      <h2 className="eyebrow">{t('stats.title')}</h2>
 
       {weatherData && (
         <div className="gauges">
           <ArcGauge value={convertTemperature(weatherData.temperature, prefs.tempUnit)}
             min={convertTemperature(-20, prefs.tempUnit)} max={convertTemperature(50, prefs.tempUnit)}
-            label="Temp" unit={tUnit.label} color="#f97316" size="sm" />
-          <ArcGauge value={weatherData.pressure} min={980} max={1040} label="Press" unit="hPa" color="#60a5fa" size="sm" />
+            label={t('gauge.temp')} unit={tUnit.label} color="#f97316" size="sm" />
+          <ArcGauge value={weatherData.pressure} min={980} max={1040} label={t('gauge.pressure')} unit="hPa" color="#60a5fa" size="sm" />
           <ArcGauge value={wUnit.convert(weatherData.wind_speed)} min={0} max={wUnit.convert(30)}
-            label="Wind" unit={wUnit.label} color="#34d399" size="sm" />
+            label={t('gauge.wind')} unit={wUnit.label} color="#34d399" size="sm" />
         </div>
       )}
 
       <div className="stack">
         <div className="stat-row">
           <div>
-            <div className="stat-label">Global mean temp</div>
+            <div className="stat-label">{t('stats.globalTemp')}</div>
             <div className="stat-value" style={{ color: '#f97316' }}>{formatTemperature(gridData.avgT, prefs.tempUnit)}</div>
           </div>
           <Sparkline history={history.T} color="#f97316" />
         </div>
         <div className="stat-row">
           <div>
-            <div className="stat-label">Global mean wind</div>
+            <div className="stat-label">{t('stats.globalWind')}</div>
             <div className="stat-value" style={{ color: '#38bdf8' }}>{formatWind(gridData.avgWind, prefs.windUnit)}</div>
           </div>
           <Sparkline history={history.wind} color="#38bdf8" />
@@ -79,24 +81,24 @@ export default function SimStats({ gridData, weatherData, prefs, onFocus }) {
 
         <div className="stat-tiles">
           <div className="stat-tile">
-            <div className="stat-label">Storms</div>
+            <div className="stat-label">{t('stats.storms')}</div>
             <div className="stat-value" style={{ color: nStorms ? '#a855f7' : 'var(--text-faint)' }}>{nStorms || '—'}</div>
           </div>
           <div className="stat-tile">
-            <div className="stat-label">Online</div>
+            <div className="stat-label">{t('stats.online')}</div>
             <div className="stat-value" style={{ color: '#34d399' }}>{gridData.viewers ?? '—'}</div>
           </div>
           <div className="stat-tile">
-            <div className="stat-label">FPS</div>
+            <div className="stat-label">{t('stats.fps')}</div>
             <div className="stat-value" style={{ color: fpsColor }}>{fps}</div>
           </div>
         </div>
 
         <div>
-          <h3 className="eyebrow" style={{ margin: '6px 0 4px' }}>Recent events</h3>
+          <h3 className="eyebrow" style={{ margin: '6px 0 4px' }}>{t('feed.recent')}</h3>
           <EventFeed events={gridData.events} serverTime={gridData.serverTime} onFocus={onFocus} limit={3} />
         </div>
-        <div className="muted" style={{ textAlign: 'right' }}>tick #{gridData.tick?.toLocaleString?.() ?? gridData.tick}</div>
+        <div className="muted" style={{ textAlign: 'right' }}>{t('stats.tick', { tick: gridData.tick?.toLocaleString?.(lang) ?? gridData.tick })}</div>
       </div>
     </section>
   )

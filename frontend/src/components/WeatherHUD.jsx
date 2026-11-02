@@ -1,5 +1,6 @@
 import SearchBar from './SearchBar'
 import { CityChips, GlobeToolbar, LayerSwitcher, SpeedControl, StatusIndicator, StormControls } from './HudParts'
+import { useI18n } from '../i18n/react'
 
 function conditionIcon(pressure, temp) {
   if (Number.isFinite(temp) && temp < 0) return '❄️'
@@ -22,6 +23,7 @@ export default function WeatherHUD({
   globeApi, fullscreen, onShare, onHelp, onSettings,
   tourActive, onToggleTour, onFocus,
 }) {
+  const { t } = useI18n()
   const icon = conditionIcon(weatherData?.pressure, weatherData?.temperature)
   return (
     <>
@@ -29,8 +31,8 @@ export default function WeatherHUD({
         <div className="brand">
           <span className="brand__icon" aria-hidden="true">{icon}</span>
           <div>
-            <h1 className="brand__title">Weather Simulation</h1>
-            <div className="brand__sub">Live global atmosphere model</div>
+            <h1 className="brand__title">{t('app.title')}</h1>
+            <div className="brand__sub">{t('app.tagline')}</div>
           </div>
         </div>
 
@@ -43,25 +45,25 @@ export default function WeatherHUD({
         <div className="topbar__actions">
           <StatusIndicator status={status} compact={layout === 'tablet'} />
           <button type="button" className="btn btn--icon btn--ghost" onClick={onSettings}
-            aria-label="Settings" title="Settings">⚙️</button>
+            aria-label={t('hud.settings')} title={t('hud.settings')}>⚙️</button>
           <button type="button" className="btn btn--icon btn--ghost" onClick={onHelp}
-            aria-label="About and keyboard shortcuts" title="About & shortcuts (?)">❔</button>
+            aria-label={t('hud.about')} title={t('hud.aboutTitle')}>❔</button>
         </div>
       </header>
 
-      <section className="dock-bottom" aria-label="Cities and simulation speed">
+      <section className="dock-bottom" aria-label={t('hud.citiesAndSpeed')}>
         <CityChips className="chips glass" locations={locations} activeCity={activeCity}
           busy={seeding} onSelect={onSeed} />
         <div className="speed-bar glass">
-          <span className="speed-bar__label" aria-hidden="true">SPEED</span>
+          <span className="speed-bar__label" aria-hidden="true">{t('speed.short')}</span>
           <SpeedControl speed={speed} disabled={speedBusy} onChange={onSpeedChange} />
           <span className="speed-bar__meta" aria-live="polite">
-            {seeding ? '⟳ Seeding…' : activeCity ? `📍 ${activeCity}` : '🌐 Click the globe'}
+            {seeding ? t('hud.seeding') : activeCity ? `📍 ${activeCity}` : t('hud.clickGlobe')}
           </span>
         </div>
       </section>
 
-      <section className="dock-bottom-right" aria-label="Storms and view controls">
+      <section className="dock-bottom-right" aria-label={t('hud.stormsAndView')}>
         <StormControls storms={gridData?.storms} tourActive={tourActive} onToggleTour={onToggleTour}
           onFocus={onFocus} prefs={prefs} />
         <GlobeToolbar api={globeApi} vertical fullscreen={fullscreen} onShare={onShare} />

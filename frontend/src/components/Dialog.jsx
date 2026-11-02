@@ -1,10 +1,12 @@
 import { useEffect, useId, useRef } from 'react'
+import { useI18n } from '../i18n/react'
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 // Modal dialog: traps focus, closes on Escape or backdrop click and returns
 // focus to whatever opened it.
 export default function Dialog({ title, onClose, children, labelledBy }) {
+  const { t } = useI18n()
   const ref = useRef(null)
   const titleId = useId()
 
@@ -42,7 +44,7 @@ export default function Dialog({ title, onClose, children, labelledBy }) {
         <div className="dialog__head">
           <h2 id={titleId} className="dialog__title">{title}</h2>
           <button type="button" className="btn btn--icon btn--ghost" onClick={onClose}
-            aria-label="Close dialog">✕</button>
+            aria-label={t('common.close')}>✕</button>
         </div>
         {children}
       </div>

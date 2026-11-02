@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { loadLanguage, setLanguage } from '../i18n/i18n.js'
 import {
-  compassPoint, formatLatLon, formatRelativeTime, formatSimTime,
-  formatTemperature, formatWind, windFromComponents,
+  compassPoint, formatLatLon, formatNumber, formatPercent, formatPressure, formatRelativeTime,
+  formatSimTime, formatTemperature, formatWind, windFromComponents,
 } from './units.js'
 
 test('temperature and wind honour the selected unit', () => {
@@ -32,4 +33,26 @@ test('coordinates, relative times and sim clock format consistently', () => {
   assert.equal(formatRelativeTime(185), '3m ago')
   assert.equal(formatRelativeTime(7300), '2h ago')
   assert.equal(formatSimTime(3725.9), '01:02:05')
+})
+
+test('Romanian uses a decimal comma, V for west and its own relative times', async t => {
+  await loadLanguage('ro')
+  setLanguage('ro')
+  t.after(() => setLanguage('en'))
+  assert.equal(formatTemperature(20, 'c'), '20,0°C')
+  assert.equal(formatWind(10, 'kn'), '19,4 kn')
+  assert.equal(formatPressure(1013.25, 1), '1013,3 hPa')
+  assert.equal(formatPercent(0.5), '50%')
+  assert.equal(formatNumber(-0.04, 1), '0,0')
+  assert.equal(formatLatLon(44.43, -26.1), '44,4°N, 26,1°V')
+  assert.equal(compassPoint(windFromComponents(5, 0).fromDegrees), 'V')
+  assert.equal(compassPoint(225), 'SV')
+  assert.equal(formatRelativeTime(2), 'chiar acum')
+  assert.equal(formatRelativeTime(185), 'acum 3 min')
+})
+
+test('English numbers never group thousands and drop negative zero', () => {
+  assert.equal(formatPressure(1013.25), '1013 hPa')
+  assert.equal(formatNumber(-0.04, 1), '0.0')
+  assert.equal(formatNumber(12345.678, 2), '12345.68')
 })
