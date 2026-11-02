@@ -78,6 +78,9 @@ test('the privacy notice is served at a clean address', async ({ request }) => {
   expect(html).toContain('<h1>Privacy</h1>')
   expect(html).toContain('<article id="ro" lang="ro">')
   expect(html).toContain('<h1>Confidențialitate</h1>')
+  // GDPR: the controller is named, with a contact, in both languages.
+  expect(html.match(/Dragne Alexandru Mihai/g)).toHaveLength(2)
+  expect(html).toContain('mailto:984.alexmihai@proton.me')
   expect(html).not.toContain('<script')
 
   const legacy = await request.get('/privacy.html', { maxRedirects: 0 })
