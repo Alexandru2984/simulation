@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useImperativeHandle, useRef, useState } from 'react'
-import { apiErrorMessage } from '../utils/api'
+import { ApiError, apiErrorMessage, fetchErrorMessage } from '../utils/api'
 import { formatNumber } from '../utils/units'
 import { useI18n } from '../i18n/react'
 
@@ -46,7 +46,7 @@ export default function SearchBar({ onSelect, autoFocus = false, ref }) {
     try {
       const res = await fetch(`/api/weather/search?q=${encodeURIComponent(text)}`,
         { signal: controller.signal })
-      if (!res.ok) throw new Error(await apiErrorMessage(res))
+      if (!res.ok) throw new ApiError(await apiErrorMessage(res))
       const data = await res.json()
       const list = Array.isArray(data) ? data.filter(d =>
         typeof d?.name === 'string' && Number.isFinite(d.lat) && Number.isFinite(d.lon)) : []
@@ -57,7 +57,7 @@ export default function SearchBar({ onSelect, autoFocus = false, ref }) {
     } catch (err) {
       if (err.name === 'AbortError') return
       setResults([])
-      setMessage(err.message || t('search.failed'))
+      setMessage(fetchErrorMessage(err, 'search.failed'))
       setOpen(true)
     } finally {
       if (abortRef.current === controller) setLoading(false)

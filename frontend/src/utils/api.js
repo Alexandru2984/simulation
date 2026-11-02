@@ -21,6 +21,20 @@ export function describeApiError(status, code) {
   return t('error.failed')
 }
 
+// A failed response whose message is already readable and translated.
+export class ApiError extends Error {
+  name = 'ApiError'
+}
+
+// Readable text for anything a fetch chain can throw: the API's own message,
+// a network failure (fetch rejects with a TypeError) or something else, such
+// as an unparsable body. Raw browser messages ("Failed to fetch") never show.
+export function fetchErrorMessage(err, fallbackKey = 'error.failed') {
+  if (err instanceof ApiError) return err.message
+  if (err?.name === 'TypeError') return t('error.network')
+  return t(fallbackKey)
+}
+
 export async function apiErrorMessage(res) {
   let code = null
   try {

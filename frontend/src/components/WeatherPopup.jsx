@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { EVENTS } from '../constants'
-import { apiErrorMessage } from '../utils/api'
+import { ApiError, apiErrorMessage, fetchErrorMessage } from '../utils/api'
 import { sampleGrid } from '../utils/geoUtils'
 import {
   compassPoint, formatLatLon, formatNumber, formatPercent, formatPressure, formatTemperature,
@@ -65,18 +65,20 @@ export default function WeatherPopup({ lat, lon, grid, prefs, onClose, onInject 
     fetch(`/api/weather/realtime?lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}`,
       { signal: controller.signal })
       .then(async res => {
-        if (!res.ok) throw new Error(await apiErrorMessage(res))
+        if (!res.ok) throw new ApiError(await apiErrorMessage(res))
         return res.json()
       })
       .then(d => setData(d))
       .catch(err => {
-        if (err.name !== 'AbortError') setError(err.message || t('error.network'))
+        if (err.name !== 'AbortError') setError(fetchErrorMessage(err))
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
-  }, [lat, lon, t])
+    // Only a new place refetches; a language change must not spend the
+    // shared upstream budget again.
+  }, [lat, lon])
 
   useEffect(() => {
     closeRef.current?.focus({ preventScroll: true })

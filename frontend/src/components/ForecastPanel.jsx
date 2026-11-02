@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { apiErrorMessage } from '../utils/api'
+import { ApiError, apiErrorMessage, fetchErrorMessage } from '../utils/api'
 import { colorLut, lutIndex } from '../utils/colorScales'
 import { formatNumber, formatSimTime, formatTemperature } from '../utils/units'
 import { useI18n } from '../i18n/react'
@@ -73,15 +73,15 @@ export default function ForecastPanel({ layout, open, onOpenChange, onPreviewSna
     setError('')
     try {
       const res = await fetch(input, { ...init, signal: controller.signal })
-      if (!res.ok) throw new Error(await apiErrorMessage(res))
+      if (!res.ok) throw new ApiError(await apiErrorMessage(res))
       const data = await res.json()
       onData(Array.isArray(data) ? data : [])
     } catch (err) {
-      if (err.name !== 'AbortError') setError(err.message || t('error.failed'))
+      if (err.name !== 'AbortError') setError(fetchErrorMessage(err))
     } finally {
       if (abortRef.current === controller) setLoading(false)
     }
-  }, [t])
+  }, [])
 
   const loadForecast = useCallback(() => request('/api/grid/forecast', {
     method: 'POST',
