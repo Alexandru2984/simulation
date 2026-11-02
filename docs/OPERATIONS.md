@@ -185,6 +185,10 @@ What the vhost enforces:
   `127.0.0.1:8094`. The backend enforces the same rule on its own: it answers
   these paths only for loopback requests without `X-Real-IP` or
   `X-Forwarded-For`, which nginx adds to everything it proxies.
+- Any `/api/` or `/ws/` path with an upper-case letter is a `404`. Every
+  route is lower-case, but Drogon matches paths case-insensitively, so
+  `/api/METRICS` or `/api/Grid/Inject` would otherwise skip the stricter
+  locations. Keep new routes lower-case.
 - `/api/client-errors` (browser error reports) has its own per-IP limit
   (12/min, burst 10) and a 16 KiB body cap, so a crash loop cannot use up the
   API budget.

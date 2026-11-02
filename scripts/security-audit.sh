@@ -215,7 +215,7 @@ done
 
 # Build SHA, build time, uptime and the client error summary stay on
 # 127.0.0.1 (deploy.sh, export-metrics.sh).
-for endpoint in metrics version ops/client-errors; do
+for endpoint in metrics version ops/client-errors METRICS Version; do
     status="$(http_code "https://${domain}/api/${endpoint}")"
     expect_equal "$status" 404 "/api/${endpoint} is not exposed publicly" "/api/${endpoint} returned "
 done

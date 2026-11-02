@@ -100,12 +100,24 @@ test('security.txt names a contact and is renewed in time', async ({ request }) 
   expect(expires - Date.now()).toBeLessThan(366 * day)
 })
 
-test('operator endpoints and dotfiles are not public', async ({ request }) => {
-  for (const path of ['/api/metrics', '/api/version', '/api/ops/client-errors']) {
+test('operator endpoints and dotfiles are not public', async ({ request, baseURL }) => {
+  // Case variants too: the backend matches routes case-insensitively.
+  for (const path of [
+    '/api/metrics', '/api/version', '/api/ops/client-errors',
+    '/api/METRICS', '/api/Version', '/api/Ops/client-errors', '/api/%4Detrics',
+  ]) {
     const res = await request.get(path)
     expect(res.status(), path).toBe(404)
     expect(await res.json(), path).toEqual({ error: 'not_found' })
   }
+  // ...so a differently-cased route cannot dodge its own, stricter limits.
+  const inject = await request.post('/api/Grid/Inject', {
+    data: { type: 'cyclone', lat: 0, lon: 0 },
+    headers: { Origin: new URL(baseURL).origin },
+  })
+  expect(inject.status()).toBe(404)
+  expect((await request.get('/api/Grid/State')).status()).toBe(404)
+  expect((await request.get('/api/grid/state')).status()).toBe(200)
   expect((await request.get('/.git/config')).status()).toBe(404)
   expect((await request.get('/.env')).status()).toBe(404)
 })
