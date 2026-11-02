@@ -255,6 +255,16 @@ TEST(search_query_keeps_international_names) {
             "curly apostrophe must be accepted");
     require(Security::normalizeSearchQuery("St. John's", out) && out == "st. john's",
             "ASCII apostrophe and period must be accepted");
+    require(Security::normalizeSearchQuery("Frankfurt (Oder)", out) && out == "frankfurt oder",
+            "parentheses must separate words, not fail");
+    require(Security::normalizeSearchQuery("Halle/Saale", out) && out == "halle saale",
+            "a slash must separate words");
+    require(Security::normalizeSearchQuery("Trinidad & Tobago", out) && out == "trinidad tobago",
+            "an ampersand must separate words");
+    std::string cjk;
+    for (int i = 0; i < 100; ++i) cjk += "\xE6\x9D\xB1";
+    require(Security::normalizeSearchQuery(cjk, out) && out.size() == 300,
+            "100 CJK characters (the search box limit) must be accepted");
 }
 
 TEST(search_query_rejects_syntax_and_invalid_utf8) {
@@ -272,8 +282,11 @@ TEST(search_query_rejects_syntax_and_invalid_utf8) {
             "zero-width space must fail");
     require(!Security::normalizeSearchQuery("ab\xE2\x80\xAE" "cd", out),
             "bidi override must fail");
-    require(!Security::normalizeSearchQuery(std::string(101, 'a'), out),
-            "query above 100 bytes must fail");
+    require(!Security::normalizeSearchQuery(std::string(301, 'a'), out),
+            "query above 300 bytes must fail");
+    require(!Security::normalizeSearchQuery("<<script>>", out), "markup must fail");
+    require(!Security::normalizeSearchQuery("paris?x=1", out), "URL syntax must fail");
+    require(!Security::normalizeSearchQuery("(&)/!", out), "separators only must fail");
 }
 
 TEST(percent_encoding_is_strict) {

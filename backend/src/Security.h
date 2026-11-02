@@ -101,10 +101,12 @@ inline std::size_t decodeUtf8(std::string_view s, std::size_t i, char32_t& cp) {
 
 // Normalizes a free-text place search. International names ("București",
 // "São Paulo", "Москва", "東京") are kept intact; controls, invisible
-// separators and URL/query syntax are rejected; whitespace runs collapse and
-// ASCII letters are lower-cased so equivalent queries share a cache entry.
+// separators and URL/query syntax are rejected; whitespace and word-separating
+// punctuation collapse to one space and ASCII letters are lower-cased, so
+// equivalent queries share a cache entry.
 inline bool normalizeSearchQuery(std::string_view input, std::string& output) {
-    constexpr std::size_t MAX_BYTES = 100;
+    // 100 characters from the search box are at most 300 bytes of UTF-8.
+    constexpr std::size_t MAX_BYTES = 300;
     if (input.size() > 4 * MAX_BYTES) return false;
 
     std::string out;
@@ -117,7 +119,14 @@ inline bool normalizeSearchQuery(std::string_view input, std::string& output) {
         const std::size_t len = decodeUtf8(input, i, cp);
         if (len == 0) return false;
 
-        if (cp == ' ' || cp == 0xA0 || cp == 0x3000) {  // incl. NBSP, ideographic
+        // Spaces (incl. NBSP and ideographic), and punctuation that only
+        // separates words in place names: "Frankfurt (Oder)", "Halle/Saale",
+        // "Trinidad & Tobago". URL and markup syntax (% = ? # < > " ...)
+        // is still refused.
+        const bool separator = cp == ' ' || cp == 0xA0 || cp == 0x3000 ||
+                               cp == '(' || cp == ')' || cp == '/' || cp == '&' ||
+                               cp == '!';
+        if (separator) {
             pendingSpace = !out.empty();
             i += len;
             continue;
