@@ -1,5 +1,7 @@
 #include <drogon/drogon.h>
 #include <cstdlib>
+#include <filesystem>
+#include <system_error>
 #include "WeatherSim.h"
 #include "WeatherController.h"
 #include "SeedController.h"
@@ -13,7 +15,21 @@
 
 void broadcastWeather();
 
-// Snapshot locations — the systemd unit grants write access to state/
+// Snapshot locations. The systemd unit sets both variables to the project's
+// state/ directory, the only one it makes writable. Without them, files go to
+// state/ under the working directory: fine for a local run, and never the
+// live state by accident. Startup warns when a default is in use.
+static bool usingDefaultPath(const char* variable) {
+    const char* env = std::getenv(variable);
+    return !(env && *env);
+}
+
+static std::string absolutePath(const std::string& path) {
+    std::error_code ec;
+    const auto full = std::filesystem::absolute(path, ec);
+    return ec ? path : full.string();
+}
+
 static const std::string& statePath() {
     static const std::string path = [] {
         const char* env = std::getenv("SIM_STATE_FILE");
@@ -123,7 +139,27 @@ static drogon::HttpResponsePtr jsonError(drogon::HttpStatusCode code) {
     return resp;
 }
 
+// Called every minute. Logs when saving starts failing and when it recovers,
+// not on every attempt, so a read-only directory is visible without
+// flooding the journal.
+static void saveStatePeriodically() {
+    static bool failing = false;
+    const bool saved = GridSim::instance().saveState(statePath());
+    if (saved == !failing) return;
+    failing = !saved;
+    if (failing)
+        LOG_ERROR << "Cannot save the grid snapshot to " << absolutePath(statePath())
+                  << "; state will be lost on restart until this is fixed (retrying every minute)";
+    else
+        LOG_WARN << "Grid snapshot saving works again: " << absolutePath(statePath());
+}
+
 int main() {
+    for (const char* variable : {"SIM_STATE_FILE", "SIM_HISTORY_FILE"}) {
+        if (usingDefaultPath(variable))
+            LOG_WARN << variable << " is not set; using "
+                     << absolutePath(std::string(variable) == "SIM_STATE_FILE" ? statePath() : historyPath());
+    }
     if (GridSim::instance().loadState(statePath()))
         LOG_INFO << "Restored grid state from " << statePath();
     if (GridSim::instance().loadHistory(historyPath()))
@@ -160,7 +196,7 @@ int main() {
     // Also run once at startup (after a short delay)
     app.getLoop()->runAfter(5.0, []() { scheduleAssimilation(); });
     // Persist grid state every minute so restarts resume where they left off
-    app.getLoop()->runEvery(60.0, []() { GridSim::instance().saveState(statePath()); });
+    app.getLoop()->runEvery(60.0, []() { saveStatePeriodically(); });
 
     // systemd supervision: signal readiness, then ping the watchdog from the
     // event loop — a hung loop stops the pings and systemd restarts us.
@@ -179,8 +215,8 @@ int main() {
     WeatherSim::instance().stop();
     GridSim::instance().stop();
     if (!GridSim::instance().saveState(statePath()))
-        LOG_WARN << "Failed to save grid state to " << statePath();
+        LOG_ERROR << "Failed to save grid state to " << absolutePath(statePath());
     if (!GridSim::instance().saveHistory(historyPath()))
-        LOG_WARN << "Failed to save grid history to " << historyPath();
+        LOG_ERROR << "Failed to save grid history to " << absolutePath(historyPath());
     return 0;
 }
